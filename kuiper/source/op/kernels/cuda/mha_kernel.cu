@@ -1,6 +1,8 @@
 #include <base/cuda_config.h>
 #include <tensor/tensor.h>
 #include <cub/cub.cuh>
+#include <float.h>  // C 标准库头文件
+
 #include "mha_kernel.cuh"
 namespace kernel {
 constexpr static int thread_num = 256;
