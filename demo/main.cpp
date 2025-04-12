@@ -2,6 +2,7 @@
 #include <base/tick.h>
 #include <glog/logging.h>
 #include "model/llama3.h"
+
 int32_t generate(const model::LLama2Model& model, const std::string& sentence, int total_steps,
                  bool need_output = false) {
   auto tokens = model.encode(sentence);

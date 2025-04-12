@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug llama_infer",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/demo/llama_infer",
+      "args": [
+        "${workspaceFolder}/models/stories15M.bin",
+        "${workspaceFolder}/models/tokenizer.model"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}

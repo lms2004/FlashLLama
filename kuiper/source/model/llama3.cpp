@@ -106,14 +106,19 @@ LLama2Model::LLama2Model(base::TokenizerType tokenizer_type, std::string token_p
 
 base::Status LLama2Model::init(base::DeviceType device_type) {
   using namespace base;
+  // check tokenizer.model path
   if (token_path_.empty()) {
     return error::PathNotValid(token_path_);
   }
+
+  // check device type
   if (device_type == base::DeviceType::kDeviceCPU && is_quant_model_) {
     return error::InternalError("The cpu device do not support int8 quant model.");
   }
 
   device_type_ = device_type;
+
+  // Create CudaStream
   if (device_type == DeviceType::kDeviceCUDA) {
     cudaSetDevice(0);
     cuda_config_ = std::make_shared<kernel::CudaConfig>();
