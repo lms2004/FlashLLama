@@ -33,6 +33,9 @@ tensor::Tensor& Model::get_buffer(ModelBufferType buffer_idx) {
   return buffers_.at(buffer_idx);
 }
 
+/*
+  从 buffers_ 对应类型 Tensor buffer 
+*/
 const tensor::Tensor& Model::get_buffer(ModelBufferType buffer_idx) const {
   CHECK_GT(buffers_.count(buffer_idx), 0);
   return buffers_.at(buffer_idx);

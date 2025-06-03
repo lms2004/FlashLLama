@@ -42,6 +42,9 @@ base::Status EmbeddingLayer::check() const {
   return base::error::Success();
 }
 
+/*
+  本质使用 emb_kernel 算子实现
+*/
 base::Status EmbeddingLayer::forward() {
   base::Status status = check();
   if (!status) {

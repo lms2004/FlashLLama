@@ -8,6 +8,11 @@ struct EmbeddingOutput {
   tensor::Tensor input_tokens;
   tensor::Tensor input_embeddings;
   tensor::Tensor input_token_num;
+
+  /*
+  move
+    左值强制转换为右值引用,本身不执行资源移动
+  */
   explicit EmbeddingOutput(tensor::Tensor input_tokens, tensor::Tensor input_embeddings,
                            tensor::Tensor input_token_num)
       : input_tokens(std::move(input_tokens)),

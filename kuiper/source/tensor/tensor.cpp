@@ -220,6 +220,11 @@ int32_t Tensor::dims_size() const { return static_cast<int32_t>(dims_.size()); }
 
 base::DataType Tensor::data_type() const { return data_type_; } // 
 
+/*
+reshape 函数用于重新配置张量的形状。
+  1. 如果新的维度与原始维度匹配，直接返回。
+  2. 如果新的维度与原始维度不匹配，重新分配内存。
+*/
 void Tensor::reshape(const std::vector<int32_t>& dims) {
   size_t size = reduce_dimension(dims.begin(), dims.end(), 1);
   if (!buffer_) {

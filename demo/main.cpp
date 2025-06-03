@@ -12,7 +12,10 @@ int32_t generate(const model::LLama2Model& model, const std::string& sentence, i
   int32_t pos = 0;
   int32_t next = -1;
   bool is_prompt = true;
+
+  // 每个tokenID → Embedding 向量 eg. 12 -> 12 * 768
   const auto& prompt_embedding = model.embedding(tokens);
+  
   tensor::Tensor pos_tensor = model.get_buffer(model::ModelBufferType::kInputPos);
 
   std::vector<int32_t> words;

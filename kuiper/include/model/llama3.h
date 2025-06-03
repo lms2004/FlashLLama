@@ -28,6 +28,7 @@ struct LLama2Layers {
   std::vector<std::shared_ptr<op::Layer>> w3_layers_;
   std::shared_ptr<op::Layer> cls_layer_;
 
+  // op::EmbeddingLayer 算子类型
   std::shared_ptr<op::Layer> embedding_layer_;
 
   void to_cuda(std::shared_ptr<kernel::CudaConfig> config);

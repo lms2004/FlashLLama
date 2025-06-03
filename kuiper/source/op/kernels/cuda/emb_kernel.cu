@@ -46,4 +46,10 @@ void emb_kernel_cu(const tensor::Tensor& input, const tensor::Tensor& weight,
                                                     wei_ptr, out_ptr);
   }
 }
+
+void emb_betterkernel_cu(const tensor::Tensor& input, const tensor::Tensor& weight,
+                   const tensor::Tensor& output, int32_t vocab_size, void* stream){
+                    return ;
+}
+
 }  // namespace kernel

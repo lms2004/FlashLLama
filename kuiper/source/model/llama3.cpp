@@ -590,12 +590,18 @@ base::Status LLama2Model::create_layers() {
 }
 
 op::EmbeddingOutput LLama2Model::embedding(const std::vector<int>& tokens) const {
+  // 从 buffers_ 取出对应类型 tensor_buffer
   auto input_tokens = get_buffer(ModelBufferType::kInputTokens);
   auto input_embeddings = get_buffer(ModelBufferType::kInputEmbeddings);
-  if (input_tokens.size() != tokens.size()) {
+
+  if (input_tokens.size() != tokens.size()) { // 检查原 tensor_buffer shape是否匹配
+    // 不匹配 -> 重新设置 shape
     input_tokens.reshape({static_cast<int32_t>(tokens.size())});
+    
+    // emdedding 的维度 <- 由模型 config_->dim_ 决定
     input_embeddings.reshape({static_cast<int32_t>(tokens.size()), config_->dim_});
   }
+
   for (int32_t i = 0; i < tokens.size(); ++i) {
     input_tokens.index<int32_t>(i) = tokens.at(i);
   }
@@ -604,9 +610,12 @@ op::EmbeddingOutput LLama2Model::embedding(const std::vector<int>& tokens) const
       tensor::Tensor(base::DataType::kDataTypeInt32, static_cast<int32_t>(tokens.size()));
   LOG_IF(FATAL, !llama_layers_->embedding_layer_)
       << "The embedding layer in the llama2 model is null pointer.";
-  STATUS_CHECK(
-      llama_layers_->embedding_layer_->forward(input_tokens, input_token_num, input_embeddings));
+  
+  // embedding forward 
+  //    输入 tokens -> 输出 input_embeddings
+  STATUS_CHECK(llama_layers_->embedding_layer_->forward(input_tokens, input_token_num, input_embeddings));
 
+  // 填入 EmbeddingOutput 
   op::EmbeddingOutput output(input_tokens, input_embeddings, input_token_num);
   return output;
 }
