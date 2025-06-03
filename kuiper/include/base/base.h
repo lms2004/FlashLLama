@@ -74,6 +74,7 @@ class NoCopyable {
   NoCopyable& operator=(const NoCopyable&) = delete;
 };
 
+
 enum StatusCode : uint8_t {
   kSuccess = 0,
   kFunctionUnImplement = 1,

@@ -34,8 +34,16 @@ SpeEncodeLayer::SpeEncodeLayer(std::string token_model_path, bool has_bos, bool 
 
 std::vector<int32_t> SpeEncodeLayer::encode(const std::string& sentence) const {
   CHECK(spe != nullptr);
-  // sentencepiece
-  std::vector<int32_t> input_ids = spe->EncodeAsIds(sentence);
+  /*
+  SentencePiece 
+    1. an unsupervised text tokenizer and detokenizer 
+          mainly for Neural Network-based text generation systems
+    2. 类似支持 BPE, UML 分词
+  */
+  
+  std::vector<int32_t> input_ids = spe->EncodeAsIds(sentence); // string -> std::vector<int32_t>
+
+  // 插入 每个句子中的起始和结束标识
   if (has_bos_) {
     input_ids.insert(input_ids.begin(), spe->bos_id());
   }

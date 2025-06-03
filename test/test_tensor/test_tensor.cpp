@@ -1,5 +1,5 @@
 #include <cuda_runtime_api.h>
-#include <glog/logging.h>
+// #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <tensor/tensor.h>
 #include "../utils.cuh"

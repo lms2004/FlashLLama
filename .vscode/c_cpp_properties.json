@@ -4,7 +4,14 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/kuiper/include"
+                "${workspaceFolder}/kuiper/include",
+                "${workspaceFolder}/kuiper/include/base",
+                "${workspaceFolder}/kuiper/include/model",
+                "${workspaceFolder}/kuiper/include/op",
+                "${workspaceFolder}/kuiper/include/tensor",
+                "${workspaceFolder}/kuiper/include/sampler",
+                "/usr/local/cuda-12.6/targets/x86_64-linux/include/",
+                ""
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

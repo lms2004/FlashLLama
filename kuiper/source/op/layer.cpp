@@ -84,31 +84,31 @@ void Layer::set_input(int32_t idx, const tensor::Tensor& input) {
   CHECK_GE(idx, 0);
   CHECK_LT(idx, inputs_.size());
   this->inputs_.at(idx) = input;
-}
+}//
 
 void Layer::set_output(int32_t idx, const tensor::Tensor& output) {
   CHECK_GE(idx, 0);
   CHECK_LT(idx, outputs_.size());
   this->outputs_.at(idx) = output;
-}
+}//
 
 const tensor::Tensor& Layer::get_input(int32_t idx) const {
   CHECK_GE(idx, 0);
   CHECK_LT(idx, inputs_.size());
   return inputs_.at(idx);
-}
+}//
 
 tensor::Tensor& Layer::get_input(int32_t idx) {
   CHECK_GE(idx, 0);
   CHECK_LT(idx, inputs_.size());
   return inputs_.at(idx);
-}
+}//
 
 tensor::Tensor& Layer::get_output(int32_t idx) {
   CHECK_GE(idx, 0);
   CHECK_LT(idx, outputs_.size());
   return outputs_.at(idx);
-}
+}//
 
 base::Status Layer::check() const {
   return base::error::FunctionNotImplement("The check function is not implement yet");
@@ -146,13 +146,16 @@ void Layer::set_cuda_config(std::shared_ptr<kernel::CudaConfig> config) {
 
 std::shared_ptr<kernel::CudaConfig> Layer::cuda_config() const { return cuda_config_; }
 
-size_t Layer::input_size() const { return inputs_.size(); }
+size_t Layer::input_size() const { return inputs_.size(); }// 
+//
 
 size_t Layer::output_size() const { return outputs_.size(); }
+//
 
 LayerParam::LayerParam(base::DeviceType device_type, LayerType layer_type, bool is_quant_layer,
                        std::string layer_name)
     : Layer(device_type, layer_type, std::move(layer_name)), is_quant_layer_(is_quant_layer) {}
+//
 
 base::Status LayerParam::set_weight(int32_t idx, const tensor::Tensor& weight) {
   CHECK_GE(idx, 0);
@@ -164,12 +167,17 @@ base::Status LayerParam::set_weight(int32_t idx, const tensor::Tensor& weight) {
   weights_.at(idx) = weight;
   return base::error::Success();
 }
+//
+
+
 
 const tensor::Tensor& LayerParam::get_weight(int32_t idx) const {
   CHECK_GE(idx, 0);
   CHECK_LT(idx, weights_.size());
   return weights_.at(idx);
 }
+//
+
 
 void LayerParam::to_cuda() {
   Layer::to_cuda();
@@ -230,9 +238,9 @@ int32_t LayerParam::get_scale_num() const {
   return static_cast<int32_t>(scales_.size());
 }
 
-void LayerParam::reset_weight_size(size_t size) { weights_.resize(size); }
+void LayerParam::reset_weight_size(size_t size) { weights_.resize(size); }//
 
-size_t LayerParam::weight_size() const { return weights_.size(); }
+size_t LayerParam::weight_size() const { return weights_.size(); }//
 
 base::Status Layer::forward(const tensor::Tensor& input1, const tensor::Tensor& output1) {
   this->set_input(0, input1);

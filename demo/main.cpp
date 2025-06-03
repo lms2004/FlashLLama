@@ -5,7 +5,7 @@
 
 int32_t generate(const model::LLama2Model& model, const std::string& sentence, int total_steps,
                  bool need_output = false) {
-  auto tokens = model.encode(sentence);
+  auto tokens = model.encode(sentence); // string -> std::vector<int32_t>
   int32_t prompt_len = tokens.size();
   LOG_IF(FATAL, tokens.empty()) << "The tokens is empty.";
 
@@ -16,9 +16,11 @@ int32_t generate(const model::LLama2Model& model, const std::string& sentence, i
   tensor::Tensor pos_tensor = model.get_buffer(model::ModelBufferType::kInputPos);
 
   std::vector<int32_t> words;
+  // 循环预测 -> 直到达到最大步数(一般不设置 eos 标识 , 所以需要手动设置最大步数)
   while (pos < total_steps) {
     pos_tensor.index<int32_t>(0) = pos;
     if (pos < prompt_len - 1) {
+      // 添加位置信息 -> 输入序列
       tensor::Tensor input = model.fill_input(pos_tensor, prompt_embedding, is_prompt);
       model.predict(input, pos_tensor, is_prompt, next);
     } else {
@@ -56,18 +58,24 @@ int main(int argc, char* argv[]) {
   const char* checkpoint_path = argv[1];  // e.g. out/model.bin
   const char* tokenizer_path = argv[2];
 
+  /*
+    构造模型神经网络结构（核心）
+    1. 读取模型配置文件
+    2. 根据配置构建
+    3. 为模型分配内存
+  */
   model::LLama2Model model(base::TokenizerType::kEncodeSpe, tokenizer_path,
     checkpoint_path, false);
   auto init_status = model.init(base::DeviceType::kDeviceCUDA);
   if (!init_status) {
     LOG(FATAL) << "The model init failed, the error code is: " << init_status.get_err_msg();
   }
-  const std::string& sentence = "a";
+  const std::string& sentence = "another day in the life of a software engineer, ";
 
   auto start = std::chrono::steady_clock::now();
   printf("Generating...\n");
   fflush(stdout);
-  int steps = generate(model, sentence, 128, true);
+  int steps = generate(model, sentence, 1000, true);
   auto end = std::chrono::steady_clock::now();
   auto duration = std::chrono::duration<double>(end - start).count();
   printf("\nsteps/s:%lf\n", static_cast<double>(steps) / duration);

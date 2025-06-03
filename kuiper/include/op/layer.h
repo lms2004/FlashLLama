@@ -142,11 +142,11 @@ class Layer : public BaseLayer {
 
   void reset_output_size(size_t size);
 
-  virtual void to_cuda();
+  virtual void to_cuda();// 
 
-  void set_cuda_config(std::shared_ptr<kernel::CudaConfig> config);
+  void set_cuda_config(std::shared_ptr<kernel::CudaConfig> config);// 
 
-  std::shared_ptr<kernel::CudaConfig> cuda_config() const;
+  std::shared_ptr<kernel::CudaConfig> cuda_config() const;// 
 
  protected:
   std::vector<tensor::Tensor> inputs_;

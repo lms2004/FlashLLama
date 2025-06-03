@@ -1,3 +1,10 @@
 build
 models
-t.cpp
+demo
+
+CMakeCache.txt
+CMakeFiles/
+
+test/test
+test/CMakeFiles/
+test/compile_commands.json

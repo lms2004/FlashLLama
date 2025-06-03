@@ -7,7 +7,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/demo/llama_infer",
       "args": [
-        "${workspaceFolder}/models/stories15M.bin",
+        "${workspaceFolder}/models/stories110M.bin",
         "${workspaceFolder}/models/tokenizer.model"
       ],
       "stopAtEntry": false,

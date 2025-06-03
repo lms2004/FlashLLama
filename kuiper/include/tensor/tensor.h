@@ -49,17 +49,17 @@ class Tensor {
 
   std::shared_ptr<base::Buffer> get_buffer() const;
 
-  size_t size() const;
+  size_t size() const; //
 
-  size_t byte_size() const;
+  size_t byte_size() const; //
 
-  int32_t dims_size() const;
+  int32_t dims_size() const; //
 
-  base::DataType data_type() const;
+  base::DataType data_type() const; //
 
-  int32_t get_dim(int32_t idx) const;
+  int32_t get_dim(int32_t idx) const; // 
 
-  const std::vector<int32_t>& dims() const;
+  const std::vector<int32_t>& dims() const; //
 
   std::vector<size_t> strides() const;
 
@@ -67,9 +67,9 @@ class Tensor {
 
   void reset(base::DataType data_type, const std::vector<int32_t>& dims);
 
-  void set_device_type(base::DeviceType device_type) const;
+  void set_device_type(base::DeviceType device_type) const; //
 
-  base::DeviceType device_type() const;
+  base::DeviceType device_type() const; //
 
   bool allocate(std::shared_ptr<base::DeviceAllocator> allocator, bool need_realloc = false);
 

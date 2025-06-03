@@ -8,6 +8,9 @@
 #include "op/swiglu.h"
 namespace model {
 
+/*
+  llama2 需要的层  
+*/
 struct LLama2Layers {
   std::shared_ptr<op::Layer> add_layer_;
   std::shared_ptr<op::Layer> rope_layer_;

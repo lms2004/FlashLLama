@@ -7,7 +7,8 @@ CUDADeviceAllocator::CUDADeviceAllocator() : DeviceAllocator(DeviceType::kDevice
 void* CUDADeviceAllocator::allocate(size_t byte_size) const {
   int id = -1;
   cudaError_t state = cudaGetDevice(&id);
-  CHECK(state == cudaSuccess);
+  CHECK(state == cudaSuccess); // Check if the device is valid
+
   if (byte_size > 1024 * 1024) {
     auto& big_buffers = big_buffers_map_[id];
     int sel_id = -1;

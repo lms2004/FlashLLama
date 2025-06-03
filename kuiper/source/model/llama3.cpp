@@ -118,7 +118,7 @@ base::Status LLama2Model::init(base::DeviceType device_type) {
 
   device_type_ = device_type;
 
-  // Create CudaStream
+  // 创建 CudaStream
   if (device_type == DeviceType::kDeviceCUDA) {
     cudaSetDevice(0);
     cuda_config_ = std::make_shared<kernel::CudaConfig>();
@@ -292,10 +292,14 @@ void LLama2Model::create_param_quant_layers() {
   }
 }
 
+/*
+  根据 Modelconfig -> 初始化 Llama2 模型的参数层。
+*/
 void LLama2Model::create_param_layers() {
   CHECK(!is_quant_model_);
   CHECK(llama_layers_ != nullptr);
-  // The embedding layer
+
+  // The embedding layer : 初始化 -> 设置权重
   auto cpu_device_type = base::DeviceType::kDeviceCPU;
   llama_layers_->embedding_layer_ = std::make_shared<op::EmbeddingLayer>(
       device_type_, config_->dim_, config_->seq_len_, std::abs(config_->vocab_size_));
@@ -304,9 +308,14 @@ void LLama2Model::create_param_layers() {
   llama_layers_->embedding_layer_->set_weight(0, {std::abs(config_->vocab_size_), config_->dim_},
                                               weight_embedding, cpu_device_type);
 
-  // create all matmul layer
+  /*
+    create all matmul layer -> 总数为 config_->layer_num_ 
+      个数相同：q = k = v
+      1.
+  */
   int32_t dim = config_->dim_;
   size_t pos = dim * std::abs(config_->vocab_size_) + dim * config_->layer_num_;
+
   // create weight matrix for query
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     auto wq = std::make_shared<op::MatmulLayer>(device_type_, dim, dim);
@@ -506,11 +515,11 @@ void LLama2Model::init_mem() {
 
 base::Status LLama2Model::create_layers() {
   using namespace base;
-  if (!llama_layers_) {
+  if (!llama_layers_) {// If llama_layers_ is not initialized, create it.
     llama_layers_ = std::make_unique<LLama2Layers>();
   }
 
-  if (!is_quant_model_) {
+  if (!is_quant_model_) { // 
     create_param_layers();
   } else {
     create_param_quant_layers();

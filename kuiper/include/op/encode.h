@@ -31,11 +31,15 @@ class EncodeLayerBase : public Layer {
   virtual int32_t vocab_size() const = 0;
 
  protected:
+  // 默认不加 eos， 参考：https://github.com/ymcui/Chinese-LLaMA-Alpaca/issues/483
   bool has_bos_ = true;
   bool has_eos_ = false;
   std::string token_model_path_;
 };
 
+/*
+  SpeEncodeLayer 是一个基于 ​​SentencePiece 分词器​​实现 Tokenization Layer
+*/
 class SpeEncodeLayer : public EncodeLayerBase {
  public:
   explicit SpeEncodeLayer(std::string token_model_path, bool has_bos, bool has_eos);
@@ -50,8 +54,21 @@ class SpeEncodeLayer : public EncodeLayerBase {
 
   int32_t vocab_size() const override;
 
- private:
-  std::unique_ptr<sentencepiece::SentencePieceProcessor> spe;
+  
+  private:
+    /*
+    sentencepiece_processor
+    功能：
+      1. Tokenize text (preprocessing)
+        eg.
+          """
+            std::vector<std::string> pieces;
+            processor.Encode("This is a test.", &pieces);
+          """
+    方法：
+      1. EncodeAsIds -> Encode 封装错误处理
+    */
+    std::unique_ptr<sentencepiece::SentencePieceProcessor> spe;
 };
 
 #if defined (LLAMA3_SUPPORT) || defined (QWEN2_SUPPORT)
