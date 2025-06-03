@@ -11,3 +11,14 @@
 1. 完成 Llama 2/3.2和Qwen 模型中多个复杂 CUDA 算子的开发与性能优化，涵盖 RMSNorm、MatMul、KV - Cache 和 MHA 等，分析并优化了内存管理技术，显著提高模型推理速度和资源利用率。优化后，内存占用峰值降低了[X]% ，性能提供了[Y]%。
 2. 深入了解并熟练运用多种大型模型推理框架，如 llama.cpp、VLLM 及 TensorRT 等，对 llama.cpp 框架进行深入研究，熟练掌握其内部实现和优化技巧。 这里你可以列举下VLLM的优化技术，比如Multi-step scheduling，Chunked prefill，Speculative decoding，PagedAttention，Continuous batching，自己按名词学习一下即可。
 3. 成功应用 int8 分组量化技术，为模型推理框架在资源受限环境下的高效运行提供了有力支持，为项目拓展了更广泛的应用场景。 这里可以扩展一下AWQ量化技术。
+
+
+
+具体推理速度
+1. llama2 :stories110M.bin tokenizer.model
+[Generation] Tokens: 989, Time: 3.2111 sec, TPS: 307.99 tokens/sec
+[Overall] Total time: 3.2407 sec
+
+steps/s:308.565568
+
+

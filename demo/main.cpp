@@ -3,8 +3,21 @@
 #include <glog/logging.h>
 #include "model/llama3.h"
 
+#include <chrono> // 添加高精度计时器
+
 int32_t generate(const model::LLama2Model& model, const std::string& sentence, int total_steps,
                  bool need_output = false) {
+  using Clock = std::chrono::steady_clock; // 使用单调时钟
+  
+  // 计时相关变量
+  Clock::time_point total_start_time;
+  Clock::time_point gen_start_time;
+  bool gen_phase_started = false;
+
+  if (need_output) {
+    total_start_time = Clock::now(); // 记录整体开始时间
+  }
+
   auto tokens = model.encode(sentence); // string -> std::vector<int32_t>
   int32_t prompt_len = tokens.size();
   LOG_IF(FATAL, tokens.empty()) << "The tokens is empty.";
@@ -19,7 +32,7 @@ int32_t generate(const model::LLama2Model& model, const std::string& sentence, i
   tensor::Tensor pos_tensor = model.get_buffer(model::ModelBufferType::kInputPos);
 
   std::vector<int32_t> words;
-  // 循环预测 -> 直到达到最大步数(一般不设置 eos 标识 , 所以需要手动设置最大步数)
+  // 循环预测 -> 直到达到最大步数
   while (pos < total_steps) {
     pos_tensor.index<int32_t>(0) = pos;
     if (pos < prompt_len - 1) {
@@ -27,6 +40,12 @@ int32_t generate(const model::LLama2Model& model, const std::string& sentence, i
       tensor::Tensor input = model.fill_input(pos_tensor, prompt_embedding, is_prompt);
       model.predict(input, pos_tensor, is_prompt, next);
     } else {
+      // 首次进入生成阶段时记录开始时间
+      if (need_output && !gen_phase_started) {
+        gen_start_time = Clock::now();
+        gen_phase_started = true;
+      }
+      
       is_prompt = false;
       tokens = std::vector<int32_t>{next};
       const auto& token_embedding = model.embedding(tokens);
@@ -45,13 +64,39 @@ int32_t generate(const model::LLama2Model& model, const std::string& sentence, i
 
     pos += 1;
   }
+  
+  // 输出结果和解码
   if (need_output) {
     printf("%s ", model.decode(words).data());
     fflush(stdout);
+    
+    // 计算并输出TPS
+    const auto total_end_time = Clock::now();
+    
+    // 计算生成阶段的token数量 (排除prompt部分的token)
+    const int32_t gen_token_count = words.size() - (prompt_len - 1);
+    
+    if (gen_phase_started && gen_token_count > 0) {
+      // 计算生成阶段耗时
+      const auto gen_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+          total_end_time - gen_start_time);
+      const double gen_seconds = gen_duration.count() / 1000000.0;
+      
+      // 计算TPS
+      const double tps = gen_token_count / gen_seconds;
+      printf("\n[Generation] Tokens: %d, Time: %.4f sec, TPS: %.2f tokens/sec\n",
+             gen_token_count, gen_seconds, tps);
+    }
+    
+    // 可选：计算整体TPS（包含prompt处理）
+    const auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+        total_end_time - total_start_time);
+    const double total_seconds = total_duration.count() / 1000000.0;
+    printf("[Overall] Total time: %.4f sec\n", total_seconds);
   }
+  
   return std::min(pos, total_steps);
 }
-
 
 int main(int argc, char* argv[]) {
   if (argc != 3) {
