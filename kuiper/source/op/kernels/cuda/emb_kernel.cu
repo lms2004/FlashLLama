@@ -39,6 +39,8 @@ void emb_kernel_cu(const tensor::Tensor& input, const tensor::Tensor& weight,
   float* out_ptr = const_cast<float*>(output.ptr<float>());
   if (stream) {
     cudaStream_t stream_ = static_cast<cudaStream_t>(stream);
+
+    // 核函数在 stream_id CUDA流中执行，不使用动态共享内存
     emb_kernel_cu_fp32<<<max_seq_len, thread_num, 0, stream_>>>(vocab_size, input_num, weight_dim,
                                                                 in_ptr, wei_ptr, out_ptr);
   } else {

@@ -134,6 +134,8 @@ base::Status LLama2Model::init(base::DeviceType device_type) {
     return read_status;
   }
   init_mem();
+
+  // 提前计算sin cos cache
   if (device_type_ == base::DeviceType::kDeviceCPU) {
     kernel::sin_cos_cache_calc_cpu(config_->head_size_, config_->seq_len_,
                                    get_buffer(ModelBufferType::kSinCache).ptr<float>(),
@@ -657,6 +659,7 @@ void LLama2Model::attention_qkv(int32_t layer_idx, const tensor::Tensor& pos_ten
   // rope
   CHECK_NE(llama_layers_->rope_layer_, nullptr)
       << "The RoPE layer in the attention block is null pointer.";
+  // 前向传播需要使用 旋转位置编码（RoPE）
   STATUS_CHECK(llama_layers_->rope_layer_->forward(
       query, key, pos_tensor, get_buffer(ModelBufferType::kSinCache),
       get_buffer(ModelBufferType::kCosCache), tensor::Tensor{}));

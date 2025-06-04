@@ -1,5 +1,6 @@
 #include "rope_kernel.cuh"
 namespace kernel {
+#define theta 10000.0f
 
 #if defined (LLAMA3_SUPPORT)
 __global__ void rope_kernel_cu_fp32(int pos, int dim, int kv_dim, int head_size,
@@ -121,11 +122,14 @@ __global__ void rope_kernel_cu_fp32(int pos, int dim, int kv_dim, int head_size,
   rope_calc(fcr, fci, const_cast<float*>(input_k), idx);
 }
 
+/*
+  计算对应 sin cos
+*/
 __global__ void sin_cos_calc(int head_size, int max_seq_len, float* sin_cache, float* cos_cache) {
   int idx = threadIdx.x + blockDim.x * blockIdx.x;
   int head_dim = idx % head_size;
+  float freq = 1.0f / pow(10000.0f, static_cast<float>(head_dim) / static_cast<float>(head_size));
   for (int pos = 0; pos < max_seq_len; ++pos) {
-    float freq = 1.0f / pow(10000.0f, static_cast<float>(head_dim) / static_cast<float>(head_size));
     float val = static_cast<float>(pos) * freq;
     float fcr = cosf(val);
     float fci = sinf(val);

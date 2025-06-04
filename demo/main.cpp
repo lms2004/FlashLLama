@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
   /*
     构造模型神经网络结构（核心）
     1. 读取模型配置文件
-    2. 根据配置构建
+    2. 根据配置构建神经网络结构
     3. 为模型分配内存
   */
   model::LLama2Model model(base::TokenizerType::kEncodeSpe, tokenizer_path,

@@ -28,4 +28,21 @@ void emb_kernel_normal(const tensor::Tensor& input, const tensor::Tensor& weight
   }
 }
 
+// GPT-2 positional encoder forward pass
+void encoder_forward_cpu(float* out,
+                   const int* inp, const float* wte, const float* wpe,
+                   int B, int T, int C) {
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            float* out_bt = out + b * T * C + t * C;
+            int ix = inp[b * T + t];
+            const float* wte_ix = wte + ix * C;
+            const float* wpe_t = wpe + t * C;
+            for (int i = 0; i < C; i++) {
+                out_bt[i] = wte_ix[i] + wpe_t[i];
+            }
+        }
+    }
+}
+
 }  // namespace kernel
