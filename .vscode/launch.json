@@ -7,8 +7,8 @@
       "request": "launch",
       "program": "${workspaceFolder}/demo/llama_infer",
       "args": [
-        "${workspaceFolder}/models/stories110M.bin",
-        "${workspaceFolder}/models/tokenizer.model"
+        "${workspaceFolder}/Llama-3.2-1B.bin",
+        "${workspaceFolder}/meta-llama/Llama-3.2-1B/tokenizer.json"
       ],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
