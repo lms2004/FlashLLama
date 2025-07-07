@@ -5,7 +5,7 @@
       "name": "Debug llama_infer",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/demo/llama_infer",
+      "program": "${workspaceFolder}/demo/llama_infer",
       "args": [
         "${workspaceFolder}/models/stories110M.bin",
         "${workspaceFolder}/models/tokenizer.model"
