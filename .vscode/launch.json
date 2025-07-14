@@ -7,8 +7,31 @@
       "request": "launch",
       "program": "${workspaceFolder}/demo/llama_infer",
       "args": [
-        "${workspaceFolder}/Llama-3.2-1B.bin",
-        "${workspaceFolder}/meta-llama/Llama-3.2-1B/tokenizer.json"
+        "${workspaceFolder}/models/stories110M.bin",
+        "${workspaceFolder}/models/tokenizer.model"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+        {
+      "name": "Debug qwen_infer",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/demo/qwen_infer",
+      "args": [
+        "${workspaceFolder}/Qwen2.5-0.5B.bin",
+        "${workspaceFolder}/Qwen/Qwen2.5-0.5B/tokenizer.json"
       ],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",

@@ -155,6 +155,19 @@ llama_infer/fast:
 	$(MAKE) $(MAKESILENT) -f demo/CMakeFiles/llama_infer.dir/build.make demo/CMakeFiles/llama_infer.dir/build
 .PHONY : llama_infer/fast
 
+#=============================================================================
+# Target rules for targets named qwen_infer
+
+# Build rule for target.
+qwen_infer: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 qwen_infer
+.PHONY : qwen_infer
+
+# fast build rule for target.
+qwen_infer/fast:
+	$(MAKE) $(MAKESILENT) -f demo/CMakeFiles/qwen_infer.dir/build.make demo/CMakeFiles/qwen_infer.dir/build
+.PHONY : qwen_infer/fast
+
 kuiper/source/base/alloc.o: kuiper/source/base/alloc.cpp.o
 .PHONY : kuiper/source/base/alloc.o
 
@@ -1149,6 +1162,7 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... llama"
 	@echo "... llama_infer"
+	@echo "... qwen_infer"
 	@echo "... test_llm"
 	@echo "... kuiper/source/base/alloc.o"
 	@echo "... kuiper/source/base/alloc.i"
