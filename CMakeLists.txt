@@ -8,6 +8,10 @@ set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
 project(llama_infer CXX CUDA)
 include(cmake/cuda.cmake)
 
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
+set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -g")
+set(CMAKE_BUILD_TYPE Debug)
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
