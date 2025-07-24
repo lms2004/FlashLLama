@@ -106,43 +106,64 @@ Qwen2Model::Qwen2Model(base::TokenizerType tokenizer_type, std::string token_pat
 
 base::Status Qwen2Model::init(base::DeviceType device_type) {
   using namespace base;
+
+  // 📁 检查 tokenizer 路径是否有效
   if (token_path_.empty()) {
     return error::PathNotValid(token_path_);
   }
+
+  // 🧠 CPU 不支持 INT8 量化模型，提前报错
   if (device_type == base::DeviceType::kDeviceCPU && is_quant_model_) {
     return error::InternalError("The cpu device do not support int8 quant model.");
   }
 
+  // ⚙️ 设置设备类型
   device_type_ = device_type;
+
+  // ⚡ 如果是 CUDA 设备，初始化 CUDA 环境
   if (device_type == DeviceType::kDeviceCUDA) {
-    cudaSetDevice(0);
-    cuda_config_ = std::make_shared<kernel::CudaConfig>();
-    cudaStreamCreate(&cuda_config_->stream);
+    cudaSetDevice(0); // 选择 GPU 0
+    cuda_config_ = std::make_shared<kernel::CudaConfig>(); // 创建 CUDA 配置
+    cudaStreamCreate(&cuda_config_->stream); // 创建 CUDA 流
+
+    // ❗ 检查 CUDA 是否初始化成功
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
       return error::InternalError("The cuda hanle create failed.");
     }
   }
 
+  // 📦 从文件加载模型参数（权重、配置等）
   Status read_status = gen_model_from_file();
   if (!read_status) {
-    return read_status;
-  }
-  init_mem();
-  if (device_type_ == base::DeviceType::kDeviceCPU) {
-    kernel::sin_cos_cache_calc_cpu(config_->head_size_, config_->seq_len_,
-                                   get_buffer(ModelBufferType::kSinCache).ptr<float>(),
-                                   get_buffer(ModelBufferType::kCosCache).ptr<float>());
-  } else {
-    CHECK_NE(cuda_config_, nullptr);
-    kernel::sin_cos_cache_calc_cu(config_->head_size_, config_->seq_len_,
-                                  get_buffer(ModelBufferType::kSinCache),
-                                  get_buffer(ModelBufferType::kCosCache), cuda_config_->stream);
+    return read_status; // 如果读取失败，返回错误状态
   }
 
+  // 🧠 初始化模型内存缓存
+  init_mem();
+
+  // 🧮 初始化 sin/cos 缓存（位置编码）
+  if (device_type_ == base::DeviceType::kDeviceCPU) {
+    kernel::sin_cos_cache_calc_cpu(
+        config_->head_size_, config_->seq_len_,
+        get_buffer(ModelBufferType::kSinCache).ptr<float>(),
+        get_buffer(ModelBufferType::kCosCache).ptr<float>());
+  } else {
+    CHECK_NE(cuda_config_, nullptr); // CUDA 配置不应为空
+    kernel::sin_cos_cache_calc_cu(
+        config_->head_size_, config_->seq_len_,
+        get_buffer(ModelBufferType::kSinCache),
+        get_buffer(ModelBufferType::kCosCache),
+        cuda_config_->stream);
+  }
+
+  // 🎯 设置采样策略：Argmax（贪婪策略）
   sampler_ = std::make_unique<sampler::ArgmaxSampler>(device_type_);
+
+  // ✅ 初始化成功
   return error::Success();
 }
+
 
 base::Status Qwen2Model::forward(const tensor::Tensor& input, const tensor::Tensor& pos_tensor,
                                  int& next) const {
@@ -290,7 +311,8 @@ void Qwen2Model::create_param_quant_layers() {
 void Qwen2Model::create_param_layers() {
   CHECK(!is_quant_model_);
   CHECK(qwen_layers_ != nullptr);
-  // The embedding layer
+
+  // 🧠 词嵌入层 Embedding Layer
   auto cpu_device_type = base::DeviceType::kDeviceCPU;
   qwen_layers_->embedding_layer_ = std::make_shared<op::EmbeddingLayer>(
       device_type_, config_->dim_, config_->seq_len_, std::abs(config_->vocab_size_));
@@ -299,10 +321,11 @@ void Qwen2Model::create_param_layers() {
   qwen_layers_->embedding_layer_->set_weight(0, {std::abs(config_->vocab_size_), config_->dim_},
                                              weight_embedding, cpu_device_type);
 
-  // create all matmul layer
+  // 🔧 构建所有 Matmul 层（矩阵乘法）
   int32_t dim = config_->dim_;
   size_t pos = dim * std::abs(config_->vocab_size_) + dim * config_->layer_num_;
-  // create weight matrix for query
+
+  // ❓ Query 权重矩阵（Wq）
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     auto wq = std::make_shared<op::MatmulLayer>(device_type_, dim, dim, false, true);
     wq->set_weight(0, {dim, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
@@ -312,7 +335,7 @@ void Qwen2Model::create_param_layers() {
     qwen_layers_->wq_layers_.push_back(wq);
   }
 
-  // create weight matrix for key
+  // 🔑 Key 权重矩阵（Wk）
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     auto wk = std::make_shared<op::MatmulLayer>(device_type_, config_->kv_dim_, dim, false, true);
     wk->set_weight(0, {config_->kv_dim_, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
@@ -322,7 +345,7 @@ void Qwen2Model::create_param_layers() {
     qwen_layers_->wk_layers_.push_back(wk);
   }
 
-  // create weight matrix for value
+  // 📦 Value 权重矩阵（Wv）
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     auto wv = std::make_shared<op::MatmulLayer>(device_type_, config_->kv_dim_, dim, false, true);
     wv->set_weight(0, {config_->kv_dim_, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
@@ -332,7 +355,7 @@ void Qwen2Model::create_param_layers() {
     qwen_layers_->wv_layers_.push_back(wv);
   }
 
-  // create weight matrix for output
+  // 🧾 Attention 输出权重矩阵（Wo）
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     auto wo = std::make_shared<op::MatmulLayer>(device_type_, dim, dim);
     wo->set_weight(0, {dim, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
@@ -340,10 +363,10 @@ void Qwen2Model::create_param_layers() {
     pos += dim * dim;
   }
 
-  // skip ffn rmsnorm
+  // 🛑 跳过 FFN 的 RMSNorm 权重（通常是偏置）
   pos += config_->layer_num_ * dim;
 
-  // w1 layers
+  // ⚙️ FFN 第一个线性层（W1）
   int32_t hidden_dim = config_->hidden_dim_;
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     auto w1 = std::make_shared<op::MatmulLayer>(device_type_, hidden_dim, dim);
@@ -352,7 +375,7 @@ void Qwen2Model::create_param_layers() {
     pos += dim * hidden_dim;
   }
 
-  // w2 layers
+  // ⚙️ FFN 第二个线性层（W2）
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     auto w2 = std::make_shared<op::MatmulLayer>(device_type_, dim, hidden_dim);
     w2->set_weight(0, {dim, hidden_dim}, this->raw_model_data_->weight(pos), cpu_device_type);
@@ -360,7 +383,7 @@ void Qwen2Model::create_param_layers() {
     pos += dim * hidden_dim;
   }
 
-  // w3 layers
+  // ⚙️ FFN 第三个线性层（W3）
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     auto w3 = std::make_shared<op::MatmulLayer>(device_type_, hidden_dim, dim);
     w3->set_weight(0, {hidden_dim, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
@@ -368,63 +391,63 @@ void Qwen2Model::create_param_layers() {
     pos += dim * hidden_dim;
   }
 
-  // skip final rms weight
+  // 🧮 跳过最终 RMSNorm、频率编码的 cos/sin 参数
   pos += dim;
-  // skip freqs_cos and freqs_sin weight
   pos += config_->seq_len_ * config_->head_size_;
 
+  // 📤 最后的输出分类层（CLS）
   qwen_layers_->cls_layer_ =
       std::make_shared<op::MatmulLayer>(device_type_, config_->vocab_size_, dim);
   if (config_->is_shared_weight_) {
-    // using token embedding weight
+    // 🔁 使用词嵌入共享权重
     qwen_layers_->cls_layer_->set_weight(0, {config_->vocab_size_, dim},
                                          this->raw_model_data_->weight(0), cpu_device_type);
   } else {
+    // 🎯 单独设置分类层权重
     qwen_layers_->cls_layer_->set_weight(0, {config_->vocab_size_, dim},
                                          this->raw_model_data_->weight(pos), cpu_device_type);
   }
 
-  // create rmsnorm layer
+  // 🧪 构建每层的 RMSNorm 层（前半部分）
   size_t rmsnorm_pos = config_->dim_ * std::abs(config_->vocab_size_);
-
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     std::shared_ptr<op::RmsNormLayer> rms_norm_layer =
         std::make_shared<op::RmsNormLayer>(device_type_, config_->dim_);
-
     const void* weight_rmsnorm = raw_model_data_->weight(rmsnorm_pos);
     rms_norm_layer->set_weight(0, {config_->dim_}, weight_rmsnorm, cpu_device_type);
     qwen_layers_->rmsnorm_layers_.push_back(rms_norm_layer);
     rmsnorm_pos += config_->dim_;
   }
 
-  // skip attention.wq attention.wk attention.wv attention.wo
+  // ⏩ 跳过 attention 权重（Wq/Wk/Wv/Wo）
   rmsnorm_pos += config_->layer_num_ * (config_->dim_ * config_->dim_ + config_->dim_);
   rmsnorm_pos += config_->layer_num_ * (config_->dim_ * config_->kv_dim_ + config_->kv_dim_);
   rmsnorm_pos += config_->layer_num_ * (config_->dim_ * config_->kv_dim_ + config_->kv_dim_);
   rmsnorm_pos += config_->layer_num_ * config_->dim_ * config_->dim_;
 
+  // 🧪 构建 RMSNorm（FFN 之前）
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     std::shared_ptr<op::RmsNormLayer> rms_norm_layer =
         std::make_shared<op::RmsNormLayer>(device_type_, config_->dim_);
     const void* weight_rmsnorm = raw_model_data_->weight(rmsnorm_pos);
     rms_norm_layer->set_weight(0, {config_->dim_}, weight_rmsnorm, cpu_device_type);
     qwen_layers_->rmsnorm_layers_.push_back(rms_norm_layer);
-
     rmsnorm_pos += config_->dim_;
   }
 
-  // skip ffn.w1 ffn.w2 ffn.w3
+  // ⏩ 跳过 FFN 的 W1/W2/W3 权重
   rmsnorm_pos += config_->layer_num_ * config_->hidden_dim_ * config_->dim_;
   rmsnorm_pos += config_->layer_num_ * config_->hidden_dim_ * config_->dim_;
   rmsnorm_pos += config_->layer_num_ * config_->hidden_dim_ * config_->dim_;
 
+  // ✅ 构建最终 RMSNorm 层
   std::shared_ptr<op::RmsNormLayer> rms_final_layer =
       std::make_shared<op::RmsNormLayer>(device_type_, config_->dim_);
-
   const void* weight_rmsnorm_final = raw_model_data_->weight(rmsnorm_pos);
   rms_final_layer->set_weight(0, {config_->dim_}, weight_rmsnorm_final, cpu_device_type);
   qwen_layers_->rmsnorm_layers_.push_back(rms_final_layer);
 }
+
 
 void Qwen2Model::init_mem() {
   std::shared_ptr<base::DeviceAllocator> alloc;
