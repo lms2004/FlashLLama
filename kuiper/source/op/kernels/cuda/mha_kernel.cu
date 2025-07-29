@@ -4,6 +4,7 @@
 #include <float.h>  // C 标准库头文件
 
 #include "mha_kernel.cuh"
+#include "flash_attention_kernel.cu"
 namespace kernel {
 constexpr static int thread_num = 256;
 __device__ void softmax_gpu(float* __restrict__ x, int size) {
@@ -117,14 +118,38 @@ void mha_kernel_cu(int32_t pos, int32_t head_num, int32_t layer_index, int32_t s
                    const tensor::Tensor& key_cache_tensor, const tensor::Tensor& value_cache_tensor,
                    base::DeviceType device_type, CudaConfig* config) {
   UNUSED(device_type);
+  // ====== FlashAttention 分支 ======
+  bool use_flash_attention = false; // 可根据实际情况加条件判断
+  if (use_flash_attention) {
+    // 1. 直接用原有参数推导 flash_attention kernel 所需参数
+    // head_num = nh, seq_len = N, head_size = d
+    // 假设 batch = 1（如需多 batch 可扩展）
+    int B = 1;
+    int nh = head_num;
+    int N = seq_len;
+    int d = head_size;
+    float* Q = const_cast<float*>(query_tensor.ptr<float>());
+    float* K = const_cast<float*>(key_cache_tensor.ptr<float>());
+    float* V = const_cast<float*>(value_cache_tensor.ptr<float>());
+    float* O = const_cast<float*>(mha_out.ptr<float>());
+    // 3. 分配 softmax 缓存
+    tensor::Tensor l_tensor(base::DataType::kDataTypeFp32, {B, nh, N}, true, query_tensor.get_buffer()->allocator());
+    tensor::Tensor m_tensor(base::DataType::kDataTypeFp32, {B, nh, N}, true, query_tensor.get_buffer()->allocator());
+    float* l = l_tensor.ptr<float>();
+    float* m = m_tensor.ptr<float>();
+    // 4. CUDA stream
+    cudaStream_t stream = config->stream;
+    // 5. 调用 flash_attention kernel
+    flash_attention_kernel_cu(Q, K, V, B, nh, N, d, l, m, O, stream);
+    return;
+  }
+  // ====== 原有 kernel fallback ======
   int32_t layer_offset = layer_index * seq_len * kv_dim;
   float* query = const_cast<float*>(query_tensor.ptr<float>());
   float* score = const_cast<float*>(score_tensor.ptr<float>());
   float* output = const_cast<float*>(mha_out.ptr<float>());
-
   float* key_cache = const_cast<float*>(key_cache_tensor.ptr<float>());
   float* value_cache = const_cast<float*>(value_cache_tensor.ptr<float>());
-
   cudaStream_t stream = config->stream;
   multi_head_attention_kernel<<<head_num, thread_num, 0, stream>>>(
       pos, seq_len, query, score, output, key_cache, value_cache, kv_dim, kv_mul, head_num,

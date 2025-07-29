@@ -365,7 +365,8 @@ void Qwen2Model::create_param_layers() {
 
   // 🛑 跳过 FFN 的 RMSNorm 权重（通常是偏置）
   pos += config_->layer_num_ * dim;
-
+  
+  // SwiGLU → w2(F.silu(w1(x)) * w3(x))
   // ⚙️ FFN 第一个线性层（W1）
   int32_t hidden_dim = config_->hidden_dim_;
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
@@ -395,7 +396,7 @@ void Qwen2Model::create_param_layers() {
   pos += dim;
   pos += config_->seq_len_ * config_->head_size_;
 
-  // 📤 最后的输出分类层（CLS）
+  // 📤 最后的输出分类层（CLS Layer）
   qwen_layers_->cls_layer_ =
       std::make_shared<op::MatmulLayer>(device_type_, config_->vocab_size_, dim);
   if (config_->is_shared_weight_) {
@@ -408,7 +409,7 @@ void Qwen2Model::create_param_layers() {
                                          this->raw_model_data_->weight(pos), cpu_device_type);
   }
 
-  // 🧪 构建每层的 RMSNorm 层（前半部分）
+  // 构建每层的 RMSNorm 层（Attention前 ）
   size_t rmsnorm_pos = config_->dim_ * std::abs(config_->vocab_size_);
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     std::shared_ptr<op::RmsNormLayer> rms_norm_layer =
@@ -425,7 +426,7 @@ void Qwen2Model::create_param_layers() {
   rmsnorm_pos += config_->layer_num_ * (config_->dim_ * config_->kv_dim_ + config_->kv_dim_);
   rmsnorm_pos += config_->layer_num_ * config_->dim_ * config_->dim_;
 
-  // 🧪 构建 RMSNorm（FFN 之前）
+  // 构建 RMSNorm（FFN 之前）
   for (int32_t i = 0; i < config_->layer_num_; ++i) {
     std::shared_ptr<op::RmsNormLayer> rms_norm_layer =
         std::make_shared<op::RmsNormLayer>(device_type_, config_->dim_);
@@ -440,7 +441,7 @@ void Qwen2Model::create_param_layers() {
   rmsnorm_pos += config_->layer_num_ * config_->hidden_dim_ * config_->dim_;
   rmsnorm_pos += config_->layer_num_ * config_->hidden_dim_ * config_->dim_;
 
-  // ✅ 构建最终 RMSNorm 层
+  // 最终归一化 (RMSNorm 层)
   std::shared_ptr<op::RmsNormLayer> rms_final_layer =
       std::make_shared<op::RmsNormLayer>(device_type_, config_->dim_);
   const void* weight_rmsnorm_final = raw_model_data_->weight(rmsnorm_pos);
@@ -450,74 +451,83 @@ void Qwen2Model::create_param_layers() {
 
 
 void Qwen2Model::init_mem() {
+  // 🧠 选择设备分配器（CPU 或 CUDA）
   std::shared_ptr<base::DeviceAllocator> alloc;
   if (device_type_ == base::DeviceType::kDeviceCPU) {
-    alloc = base::CPUDeviceAllocatorFactory::get_instance();
+    alloc = base::CPUDeviceAllocatorFactory::get_instance(); // 🖥️ CPU 分配器
   } else {
-    alloc = base::CUDADeviceAllocatorFactory::get_instance();
+    alloc = base::CUDADeviceAllocatorFactory::get_instance(); // ⚡ CUDA 分配器
   }
 
+  // 🔧 如果是 CUDA 设备，初始化 CUDA 配置和模型权重到 CUDA
   if (device_type_ == base::DeviceType::kDeviceCUDA) {
-    CHECK_NE(cuda_config_, nullptr);
+    CHECK_NE(cuda_config_, nullptr); // 🚨 确保 CUDA 配置存在
     qwen_layers_->to_cuda(cuda_config_);
   }
 
+  // 🧱 准备 CPU 和 CUDA 分配器（分别用于不同类型的张量）
   std::shared_ptr<base::DeviceAllocator> alloc_cpu =
       base::CPUDeviceAllocatorFactory::get_instance();
   std::shared_ptr<base::DeviceAllocator> alloc_cu =
       base::CUDADeviceAllocatorFactory::get_instance();
 
+  // 📝 输入 token 张量（Int32）
   tensor::Tensor input_tokens(base::DataType::kDataTypeInt32, 1, true, alloc_cpu);
+  // 🔡 输入嵌入张量（Float32）
   tensor::Tensor input_embeddings(base::DataType::kDataTypeFp32, 1, config_->dim_, true, alloc);
+  // 🔄 正弦/余弦缓存（位置编码）
   tensor::Tensor sin_cache(base::DataType::kDataTypeFp32, config_->head_size_ * config_->seq_len_,
                            true, alloc);
   tensor::Tensor cos_cache(base::DataType::kDataTypeFp32, config_->head_size_ * config_->seq_len_,
                            true, alloc);
 
+  // 🧩 插入正弦/余弦缓存到模型缓冲区
   CHECK(insert_buffer(ModelBufferType::kSinCache, sin_cache));
   CHECK(insert_buffer(ModelBufferType::kCosCache, cos_cache));
 
+  // ➕ 插入输入 token 与嵌入张量
   CHECK(insert_buffer(ModelBufferType::kInputTokens, input_tokens));
   CHECK(insert_buffer(ModelBufferType::kInputEmbeddings, input_embeddings));
 
+  // 🔄 各阶段共享的中间张量（RMSNorm、MHA 输出、FFN 等）
   tensor::Tensor rms_output(base::DataType::kDataTypeFp32, config_->dim_, true, alloc);
   CHECK(insert_buffer(ModelBufferType::kOutputRMSNorm, rms_output));
   CHECK(insert_buffer(ModelBufferType::kOutputMHA, rms_output));
   CHECK(insert_buffer(ModelBufferType::kW2Output, rms_output));
   CHECK(insert_buffer(ModelBufferType::kFFNRMSNorm, rms_output));
 
+  // 📦 FFN 中的 w1/w3 输出张量
   tensor::Tensor w1_output(base::DataType::kDataTypeFp32, config_->hidden_dim_, true, alloc);
   tensor::Tensor w3_output(base::DataType::kDataTypeFp32, config_->hidden_dim_, true, alloc);
-
   CHECK(insert_buffer(ModelBufferType::kW1Output, w1_output));
   CHECK(insert_buffer(ModelBufferType::kW3Output, w3_output));
 
-  // kv cache
+  // 🧠 KV 缓存（每层、每位置、每头）
   tensor::Tensor key_cache(base::DataType::kDataTypeFp32, config_->layer_num_, config_->seq_len_,
                            config_->kv_dim_, true, alloc);
   tensor::Tensor value_cache(base::DataType::kDataTypeFp32, config_->layer_num_, config_->seq_len_,
                              config_->kv_dim_, true, alloc);
-
   CHECK(insert_buffer(ModelBufferType::kKeyCache, key_cache));
   CHECK(insert_buffer(ModelBufferType::kValueCache, value_cache));
 
-  // Wq query output
+  // ❓ Wq 投影后的 Query 张量
   tensor::Tensor query(base::DataType::kDataTypeFp32, config_->dim_, true, alloc);
   CHECK(insert_buffer(ModelBufferType::kQuery, query));
 
-  // Pos tensor
+  // 📍 位置张量（用于位置编码）
   tensor::Tensor pos_tensor(base::DataType::kDataTypeInt32, 1, true, alloc_cpu);
   CHECK(insert_buffer(ModelBufferType::kInputPos, pos_tensor));
 
-  // Attention output
+  // 🎯 Attention 分数和输出（注意力得分 & 加权输出）
   tensor::Tensor attn(base::DataType::kDataTypeFp32, config_->head_num_, config_->seq_len_, true,
                       alloc);
   CHECK(insert_buffer(ModelBufferType::kScoreStorage, attn));
-  CHECK(insert_buffer(ModelBufferType::kAttnOutput, query));
+  CHECK(insert_buffer(ModelBufferType::kAttnOutput, query)); // ⚠️ 重用 query 作为输出缓存
 
-  // final forward output
+  // ✅ 最终前向输出（logits）
   tensor::Tensor forward_output(base::DataType::kDataTypeFp32, config_->vocab_size_, true, alloc);
   if (device_type_ == base::DeviceType::kDeviceCUDA) {
+    // 💾 CUDA 上推理，但输出转回 CPU
     tensor::Tensor forward_output_cpu(base::DataType::kDataTypeFp32, config_->vocab_size_, true,
                                       alloc_cpu);
     CHECK(insert_buffer(ModelBufferType::kForwardOutputCPU, forward_output_cpu));
@@ -525,6 +535,7 @@ void Qwen2Model::init_mem() {
 
   CHECK(insert_buffer(ModelBufferType::kForwardOutput, forward_output));
 }
+
 
 base::Status Qwen2Model::create_layers() {
   using namespace base;

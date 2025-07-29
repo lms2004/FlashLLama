@@ -42,90 +42,85 @@ const tensor::Tensor& Model::get_buffer(ModelBufferType buffer_idx) const {
 }
 
 /*
-  自定义 .bin 权重 -> 读取模型权重 
+  📦 自定义 .bin 权重文件读取流程
 
-  .bin 权重结构
-    """
-      1.  struct ModelConfig {
-            int32_t dim = 0;
-            int32_t hidden_dim = 0;
-            int32_t layer_num = 0;
-            int32_t head_num = 0;
-            int32_t kv_head_num = 0;
-            int32_t vocab_size = 0;
-            int32_t seq_len = 0;
-          };
-      2.  group_size_ <- is_quant_model_(可选)
-    """
+  .bin 权重结构（顺序布局）：
+  """
+    struct ModelConfig {
+        int32_t dim;
+        int32_t hidden_dim;
+        int32_t layer_num;
+        int32_t head_num;
+        int32_t kv_head_num;
+        int32_t vocab_size;
+        int32_t seq_len;
+    };
+    int32_t group_size_;  // 👈 若为量化模型，额外读取该值
+    ... 剩下部分是权重（float 或 int8）
+  """
 */
 base::Status Model::read_model_file() {
   using namespace base;
+
+  // 🔍 路径为空直接报错
   if (model_path_.empty()) {
     return error::PathNotValid("Failed to open the weight file, the model path is empty!");
   }
+
+  // 📂 尝试以只读方式打开文件（低级 API）
   int32_t fd = open(model_path_.data(), O_RDONLY);
   if (fd == -1) {
     return error::PathNotValid("Failed to open the weight file " + model_path_ +
                                " may be the path does not exist!");
   }
 
+  // 📖 用标准 C 库方式再打开一次用于 fread 操作（读取 config）
   FILE* file = fopen(model_path_.data(), "rb");
   if (!file) {
     return error::PathNotValid("Failed to open the file. The path may be invalid.");
   }
 
+  // 📐 读取模型结构配置 ModelConfig
   auto config = ModelConfig{};
   if (fread(&config, sizeof(ModelConfig), 1, file) != 1) {
-    return error::ModelParseError(
-        "Failed to retrieve the configuration information from the model "
-        "file.");
+    return error::ModelParseError("Failed to retrieve the configuration information from the model file.");
   }
+
+  // 📦 若是量化模型（如 int8），继续读取 group_size_ 参数
   if (is_quant_model_) {
     if (fread(&group_size_, sizeof(int32_t), 1, file) != 1) {
-      return error::ModelParseError(
-          "Failed to retrieve the group size information from the model "
-          "file.");
+      return error::ModelParseError("Failed to retrieve the group size information from the model file.");
     }
   }
 
+  // 
   auto gen_status = generate_model_infos(config);
   if (!gen_status) {
-    return gen_status;
+    return gen_status;  // ❌ 配置转化失败
   }
 
-  /*
-    量化权重类型
-      1. float32 近似-> int8
-  */
+  // 🧮 准备权重数据存储结构体（根据是否量化选择）
   if (!is_quant_model_) {
-    raw_model_data_ = std::make_shared<RawModelDataFp32>();
+    raw_model_data_ = std::make_shared<RawModelDataFp32>();  // 使用 float32 权重
   } else {
-    raw_model_data_ = std::make_shared<RawModelDataInt8>();
+    raw_model_data_ = std::make_shared<RawModelDataInt8>();  // 使用 int8 权重
   }
 
-  /*
-    fstat 获取​​已打开文件​​的状态信息 -> stat
-    
-    stat结构
-    ""
-    
-    
-    ""
-  */
+  // 📏 获取权重文件大小（用于 mmap）
   struct stat st;
   if (fstat(fd, &st) == -1) {
     close(fd);
-    return error::ModelParseError(
-        "Failed to retrieve the file size information from the model "
-        "file.");
+    return error::ModelParseError("Failed to retrieve the file size information from the model file.");
   }
-  raw_model_data_->file_size = st.st_size; //  // 文件大小（字节）
+  raw_model_data_->file_size = st.st_size;
+
+  // 📋 打印模型信息（路径、大小、量化状态等）
   LOG(INFO) << "The tokenizer model path: " << token_path_;
   std::string tokenizer_type_str = tokenizer_type_ == TokenizerType::kEncodeBpe ? "Bpe" : "Spe";
   LOG(INFO) << "The tokenizer type: " << tokenizer_type_str;
 
   LOG(INFO) << "The model path: " << model_path_;
-  LOG(INFO) << "The model file size: " << (raw_model_data_->file_size/(1<<20)) << " MB";
+  LOG(INFO) << "The model file size: " << (raw_model_data_->file_size / (1 << 20)) << " MB";
   std::string quant_info = is_quant_model_ ? "quant" : "not quant";
   LOG(INFO) << "The model is " << quant_info << " model";
 
@@ -133,25 +128,20 @@ base::Status Model::read_model_file() {
     LOG(INFO) << "\nThe model info: " << *config_;
   }
 
+  // 🔒 保存 fd 到 raw_model_data_，供 mmap 使用
   raw_model_data_->fd = fd;
-  /*
-  mmap
-    将文件或设备映射到进程的虚拟地址空间 fd -> addr(NULL 内核自动选择地址)
-  */
+
+  // 🧠 使用 mmap 将整个权重文件映射到内存空间（只读、私有映射）
   raw_model_data_->data =
       mmap(nullptr, raw_model_data_->file_size, PROT_READ, MAP_PRIVATE, raw_model_data_->fd, 0);
-
   if (raw_model_data_->data == MAP_FAILED || raw_model_data_->data == nullptr) {
     return error::ModelParseError("Failed to map the weight file " + model_path_ + " into memory.");
   }
 
   /*
-    采用偏移量 定位 权重起始地址
-    ""
-      1. 模型配置 ModelConfig 结构体大小
-      2. 如果是量化模型，则还需要加上 group_size_ 的大小
-      3. 然后开始读取权重数据
-    ""
+    🎯 计算权重数据的起始地址：
+      - 偏移量为 ModelConfig 结构体大小
+      - 若为量化模型，还需加上 group_size_ 大小
   */
   if (!is_quant_model_) {
     raw_model_data_->weight_data =
@@ -160,13 +150,18 @@ base::Status Model::read_model_file() {
     raw_model_data_->weight_data =
         static_cast<int8_t*>(raw_model_data_->data) + sizeof(ModelConfig) + sizeof(group_size_);
   }
+
+  // 🚨 最后检查指针是否为空
   if (raw_model_data_ == nullptr) {
     LOG(ERROR);
     return error::ModelParseError("Failed to map the weight file " + model_path_ +
                                   " into memory, the pointer to weight start address is null");
   }
+
+  // ✅ 成功完成映射与数据准备
   return error::Success();
 }
+
 
 base::Status Model::generate_model_infos(const ModelConfig& config) const {
   config_->dim_ = config.dim;
@@ -225,34 +220,37 @@ base::Status Model::create_encode_layer() {
 
 base::Status Model::gen_model_from_file() {
   using namespace base;
+
+  // ⚙️ 初始化 Transformer 配置对象（用于存储模型结构信息）
   config_ = std::make_unique<TransformerConfig>();
 
-
-  // 1. tokenization layer
+  // 🧩 步骤 1：创建 tokenizer/embedding 编码层
   auto create_encode_status = create_encode_layer();
   if (!create_encode_status) {
     LOG(ERROR) << "Create the encode layer failed! " << create_encode_status.get_err_msg();
-    return create_encode_status;
+    return create_encode_status; // ❌ 失败时返回错误状态
   }
-  
-  // 读取模型文件完整信息 -> 用于创建模型神经网络层
+
+  // 📂 步骤 2：读取模型文件（memory map 方式）
+  // 主要读取所有的权重参数（embedding、attention、ffn、rmsnorm 等）
   auto mmap_status = read_model_file();
   if (!mmap_status) {
     LOG(ERROR) << "Read model file " << model_path_ << " failed! " << mmap_status.get_err_msg();
-    return mmap_status;
+    return mmap_status; // ❌ 读取失败返回
   }
 
-  // 2. create model layers
-  //  -> 包括权重层和非权重层
+  // 🏗️ 步骤 3：构建模型层（例如 attention 层、ffn 层、rmsnorm 层等）
   auto layer_create_status = create_layers();
   if (!layer_create_status) {
     LOG(ERROR) << "Create layers for the model file " << model_path_ << " failed! "
                << mmap_status.get_err_msg();
-    return layer_create_status;
+    return layer_create_status; // ❌ 创建失败返回
   }
 
+  // ✅ 全部成功，返回成功状态
   return error::Success();
 }
+
 
 std::vector<int32_t> Model::encode(const std::string& sentence) const {
   CHECK(encode_layer_ != nullptr);
