@@ -4,7 +4,7 @@
 [![C++](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-11.0+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 
-FlashLLama 是一个专为高性能大语言模型推理而设计的 C++/CUDA 框架，支持 Llama 2/3.2 和 Qwen 等主流模型，具备优秀的推理性能和内存效率。
+FlashLLama 是一个专为高性能大语言模型推理而设计的 C++/CUDA 框架，支持 Llama 和 Qwen 等主流模型，具备优秀的推理性能和内存效率。
 
 ## ✨ 核心特性
 
