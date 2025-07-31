@@ -3,6 +3,8 @@
 #include <math.h>
 #include <float.h>
 #include <stdio.h>
+// flash_attention_kernel.cu
+#include "flash_attention_kernel.cuh"
 
 // 🚀 FlashAttention CUDA kernel
 // 该 kernel 实现了 block-wise、tile 化的高效注意力计算，显著降低显存占用，提升长序列推理速度。
@@ -95,7 +97,7 @@ __global__ void flash_attention_forward_kernel(const float* Q, const float* K, c
 }
 
 // C++ 封装接口，供 mha_kernel_cu 调用
-extern "C" void flash_attention_kernel_cu(const float* Q, const float* K, const float* V, int B, int nh, int N, int d,
+void flash_attention_kernel_cu(const float* Q, const float* K, const float* V, int B, int nh, int N, int d,
                                            float* l, float* m, float* O, cudaStream_t stream) {
     // 🧩 Block 大小（tile 大小），可根据硬件动态调整
     const int Bc = 32, Br = 32;

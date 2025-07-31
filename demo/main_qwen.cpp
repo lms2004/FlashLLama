@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
   if (!init_status) {
     LOG(FATAL) << "The model init failed, the error code is: " << init_status.get_err_code();
   }
-  const std::string& sentence = "hi!";
+  const std::string& sentence = "给我讲一个故事？";
 
   auto start = std::chrono::steady_clock::now();
   printf("🤖 Generating...\n");
@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
   double first_token_latency = 0.0;
   double avg_token_latency = 0.0;
 
-  int steps = generate(model, sentence, 128, true, first_token_latency, avg_token_latency);
+  int steps = generate(model, sentence, 512, true, first_token_latency, avg_token_latency);
 
   auto end = std::chrono::steady_clock::now();
   auto duration_sec = std::chrono::duration<double>(end - start).count();

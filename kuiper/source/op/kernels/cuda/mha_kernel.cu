@@ -4,7 +4,7 @@
 #include <float.h>  // C 标准库头文件
 
 #include "mha_kernel.cuh"
-#include "flash_attention_kernel.cu"
+#include "flash_attention_kernel.cuh"  // ✅ 只引入声明，不引入 .cu 实现
 namespace kernel {
 constexpr static int thread_num = 256;
 __device__ void softmax_gpu(float* __restrict__ x, int size) {

@@ -71,7 +71,9 @@
         "variant": "cpp",
         "armadillo": "cpp",
         "ranges": "cpp",
-        "version": "cpp"
+        "version": "cpp",
+        "forward_list": "cpp",
+        "list": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
