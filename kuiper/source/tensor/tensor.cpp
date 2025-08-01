@@ -103,16 +103,77 @@ Tensor::Tensor(base::DataType data_type, std::vector<int32_t> dims, bool need_al
 
 void Tensor::to_cuda(cudaStream_t stream) {
   CHECK_NE(buffer_, nullptr);
+  
+  // 添加调试信息
+  LOG(INFO) << "Tensor::to_cuda called, buffer_=" << buffer_ << ", ptr=" << buffer_->ptr();
+  
   const base::DeviceType device_type = this->device_type();
   if (device_type == base::DeviceType::kDeviceUnknown) {
     LOG(ERROR) << "The device type of the tensor is unknown.";
+    return;
   } else if (device_type == base::DeviceType::kDeviceCPU) {
     size_t byte_size = this->byte_size();
+    LOG(INFO) << "Moving tensor to CUDA, byte_size=" << byte_size;
+    
+    // 检查 GPU 内存使用情况
+    size_t free_mem, total_mem;
+    cudaError_t mem_err = cudaMemGetInfo(&free_mem, &total_mem);
+    if (mem_err == cudaSuccess) {
+      LOG(INFO) << "GPU memory: free=" << (free_mem / (1024*1024)) << "MB, total=" << (total_mem / (1024*1024)) << "MB, required=" << (byte_size / (1024*1024)) << "MB";
+      if (free_mem < byte_size) {
+        LOG(ERROR) << "Insufficient GPU memory! Need " << (byte_size / (1024*1024)) << "MB but only " << (free_mem / (1024*1024)) << "MB available";
+        return;
+      }
+    } else {
+      LOG(WARNING) << "Failed to get GPU memory info: " << cudaGetErrorString(mem_err);
+    }
+    
     auto cu_alloc = base::CUDADeviceAllocatorFactory::get_instance();
+    if (!cu_alloc) {
+      LOG(ERROR) << "CUDA allocator is null!";
+      return;
+    }
+    
     auto cu_buffer = std::make_shared<base::Buffer>(byte_size, cu_alloc);
+    if (!cu_buffer) {
+      LOG(ERROR) << "Failed to create CUDA buffer!";
+      return;
+    }
+    
+    if (!cu_buffer->ptr()) {
+      LOG(ERROR) << "CUDA buffer ptr is null!";
+      return;
+    }
+    
+    LOG(INFO) << "CUDA buffer created, ptr=" << cu_buffer->ptr();
+    
+    // 检查源指针
+    if (!buffer_->ptr()) {
+      LOG(ERROR) << "Source buffer ptr is null!";
+      return;
+    }
+    
+    LOG(INFO) << "Starting cudaMemcpy, src=" << buffer_->ptr() << ", dst=" << cu_buffer->ptr() << ", size=" << byte_size;
+    
+    // 检查 CUDA 错误
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      LOG(ERROR) << "CUDA error before memcpy: " << cudaGetErrorString(err);
+      return;
+    }
+    
     cu_alloc->memcpy(buffer_->ptr(), cu_buffer->ptr(), byte_size, base::MemcpyKind::kMemcpyCPU2CUDA,
                      stream);
+    
+    // 检查 memcpy 是否成功
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      LOG(ERROR) << "CUDA memcpy failed: " << cudaGetErrorString(err);
+      return;
+    }
+    
     this->buffer_ = cu_buffer;
+    LOG(INFO) << "Tensor moved to CUDA successfully";
   } else {
     LOG(INFO) << "The device type of the tensor is already cuda.";
   }

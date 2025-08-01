@@ -155,7 +155,6 @@ size_t Layer::output_size() const { return outputs_.size(); }
 LayerParam::LayerParam(base::DeviceType device_type, LayerType layer_type, bool is_quant_layer,
                        std::string layer_name)
     : Layer(device_type, layer_type, std::move(layer_name)), is_quant_layer_(is_quant_layer) {}
-//
 
 base::Status LayerParam::set_weight(int32_t idx, const tensor::Tensor& weight) {
   CHECK_GE(idx, 0);
@@ -167,17 +166,12 @@ base::Status LayerParam::set_weight(int32_t idx, const tensor::Tensor& weight) {
   weights_.at(idx) = weight;
   return base::error::Success();
 }
-//
-
-
 
 const tensor::Tensor& LayerParam::get_weight(int32_t idx) const {
   CHECK_GE(idx, 0);
   CHECK_LT(idx, weights_.size());
   return weights_.at(idx);
 }
-//
-
 
 void LayerParam::to_cuda() {
   Layer::to_cuda();
@@ -218,9 +212,26 @@ base::Status LayerParam::set_weight(int32_t idx, const std::vector<int32_t>& dim
     CHECK(weight_size % group_size_ == 0);
 
     int32_t scale_nums = weight_size / group_size_;
+    // 修复：使用字节偏移计算 scales 指针
+    // weight_size 是 int8_t 的数量，需要转换为字节偏移
+    size_t weight_bytes = weight_size * sizeof(int8_t);
+    
+    printf("Setting scales: weight_size=%d, group_size_=%d, scale_nums=%d, weight_bytes=%zu\n", 
+           weight_size, group_size_, scale_nums, weight_bytes);
+    printf("weight_ptr=%p, scales_ptr=%p\n", weight_ptr, 
+           reinterpret_cast<float*>(static_cast<char*>(const_cast<void*>(weight_ptr)) + weight_bytes));
+    
     scales_ = tensor::Tensor{base::DataType::kDataTypeFp32, scale_nums, false, nullptr,
-                             reinterpret_cast<float*>((int8_t*)weight_ptr + weight_size)};
+                             reinterpret_cast<float*>(static_cast<char*>(const_cast<void*>(weight_ptr)) + weight_bytes)};
     scales_.set_device_type(device_type);
+    
+    // 检查 scales_ptr 指向的内存内容
+    float* scales_ptr = reinterpret_cast<float*>(static_cast<char*>(const_cast<void*>(weight_ptr)) + weight_bytes);
+    printf("First 8 float values at scales_ptr: ");
+    for (int i = 0; i < 8; ++i) {
+      printf("%f ", scales_ptr[i]);
+    }
+    printf("\n");
   }
 
   return base::error::Success();

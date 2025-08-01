@@ -12,7 +12,11 @@ Buffer::Buffer(size_t byte_size, std::shared_ptr<DeviceAllocator> allocator, voi
     device_type_ = allocator_->device_type();
     use_external_ = false;
     ptr_ = allocator_->allocate(byte_size);
+  } else if (ptr_ && allocator_) {
+    // 如果有外部指针和分配器，设置设备类型
+    device_type_ = allocator_->device_type();
   }
+  // 如果没有分配器，device_type_ 保持默认值 kDeviceUnknown
 }
 
 Buffer::~Buffer() {
@@ -61,8 +65,16 @@ void Buffer::copy_from(const Buffer& buffer) const {
   size_t byte_size = byte_size_ < buffer.byte_size_ ? byte_size_ : buffer.byte_size_;
   const DeviceType& buffer_device = buffer.device_type();
   const DeviceType& current_device = this->device_type();
-  CHECK(buffer_device != DeviceType::kDeviceUnknown &&
-        current_device != DeviceType::kDeviceUnknown);
+  
+  // 添加详细的设备类型检查
+  if (buffer_device == DeviceType::kDeviceUnknown) {
+    LOG(ERROR) << "Source buffer device type is unknown!";
+    return;
+  }
+  if (current_device == DeviceType::kDeviceUnknown) {
+    LOG(ERROR) << "Destination buffer device type is unknown!";
+    return;
+  }
 
   if (buffer_device == DeviceType::kDeviceCPU &&
       current_device == DeviceType::kDeviceCPU) {
@@ -75,9 +87,14 @@ void Buffer::copy_from(const Buffer& buffer) const {
              current_device == DeviceType::kDeviceCUDA) {
     return allocator_->memcpy(buffer.ptr(), this->ptr_, byte_size,
                               MemcpyKind::kMemcpyCPU2CUDA);
-  } else {
+  } else if (buffer_device == DeviceType::kDeviceCUDA &&
+             current_device == DeviceType::kDeviceCUDA) {
     return allocator_->memcpy(buffer.ptr(), this->ptr_, byte_size,
                               MemcpyKind::kMemcpyCUDA2CUDA);
+  } else {
+    LOG(ERROR) << "Unsupported device combination: src=" << int(buffer_device) 
+               << ", dst=" << int(current_device);
+    return;
   }
 }
 
