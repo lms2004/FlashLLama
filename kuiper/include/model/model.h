@@ -1,5 +1,5 @@
 #ifndef KUIPER_INCLUDE_MODEL_MODEL_H_
-#define KUIPER_INCLUDE_MODEL_MODEL_H_
+#define KUIPER_INCLUDE_MODEL_H_
 #include <op/embedding.h>
 #include <map>
 #include <string>
@@ -15,7 +15,7 @@ namespace model {
 class Model {
  public:
   explicit Model(base::TokenizerType tokenizer_type, base::ModelType model_type,
-                 std::string token_path, std::string model_path, bool is_quant_model);
+                 std::string token_path, std::string model_path, bool is_quant_model = false);
 
   virtual base::Status init(base::DeviceType device_type) = 0;
 
@@ -54,6 +54,25 @@ class Model {
                                     const op::EmbeddingOutput& embedding_output,
                                     bool is_prompt) const;
 
+  // 新增：获取配置信息
+  const TransformerConfig* get_config() const { return config_.get(); }
+  
+  // 新增：是否为量化模型
+  bool is_quantized() const { return is_quant_model_; }
+  
+  // 新增：获取量化类型
+  QuantizationType get_quantization_type() const { 
+    return config_ ? config_->quant_type_ : QuantizationType::kNone; 
+  }
+  
+  // 新增：获取文件格式版本
+  FileFormatVersion get_file_format_version() const { 
+    return config_ ? config_->file_version_ : FileFormatVersion::kLegacy; 
+  }
+  
+  // 新增：获取分组大小
+  int32_t get_group_size() const { return group_size_; }
+
  protected:
   virtual base::Status insert_buffer(ModelBufferType buffer_idx, const tensor::Tensor& tensor);
 
@@ -66,6 +85,15 @@ class Model {
   virtual base::Status generate_model_infos(const ModelConfig& config) const;
 
   virtual int32_t post_processing(const tensor::Tensor& pos, bool is_prompt) const = 0;
+
+  // 新增：自动检测量化类型
+  virtual QuantizationType detect_quantization_type(const std::string& model_path) const;
+  
+  // 新增：自动检测文件格式版本
+  virtual FileFormatVersion detect_file_format_version(const std::string& model_path) const;
+  
+  // 新增：设置模型信息
+  virtual void set_model_info(const std::string& model_path);
 
  private:
   virtual void init_mem() = 0;

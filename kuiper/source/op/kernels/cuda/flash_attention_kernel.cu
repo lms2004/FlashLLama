@@ -3,110 +3,141 @@
 #include <math.h>
 #include <float.h>
 #include <stdio.h>
+#include <cub/cub.cuh>  // 添加 cub 头文件用于 BlockReduce
 // flash_attention_kernel.cu
 #include "flash_attention_kernel.cuh"
 
-// 🚀 FlashAttention CUDA kernel
+// 🚀 FlashAttention CUDA kernel - 适配 MHA 参数结构
 // 该 kernel 实现了 block-wise、tile 化的高效注意力计算，显著降低显存占用，提升长序列推理速度。
-__global__ void flash_attention_forward_kernel(const float* Q, const float* K, const float* V, int N, int d,
-                                               int Tc, int Tr, int Bc, int Br, float softmax_scale,
-                                               float* l, float* m, float* O) {
-    int tx = threadIdx.x;              // 🧵 当前线程在线程块中的索引
-    int bx = blockIdx.x, by = blockIdx.y;  // 🧱 当前线程块对应的 batch 和 head
+__global__ void flash_attention_forward_kernel(int32_t pos, int32_t seq_len, float* query,
+                                               float* score_ptr, float* output, float* key_cache,
+                                               float* value_cache, int32_t kv_dim, int32_t kv_mul,
+                                               int32_t head_num, int32_t head_size,
+                                               int32_t layer_offset) {
+    int head = blockIdx.x;
+    if (head >= head_num) {
+        return;
+    }
 
-    // 📦 计算当前 batch 和 head 对应的 Q/K/V/输出偏移
-    int qkv_offset = (bx * gridDim.y * N * d) + (by * N * d); 
-    int lm_offset  = (bx * gridDim.y * N) + (by * N);         // 用于 l 和 m 的偏移
+    int tx = threadIdx.x;
+    float scale = 1.f / sqrtf(head_size);
+    float* query_head = query + head * head_size;
+    float* score_head = score_ptr + head * seq_len;
+    int head_offset = (head / kv_mul) * head_size;
 
     // 🧠 声明共享内存区：用于存 Q, K, V 片段 + 中间结果 S
     extern __shared__ float sram[];
-    int tile_size = Bc * d;
+    int tile_size = 32; // 使用较小的 tile size 适配 MHA 逻辑
     float* Qi = sram;                           // 当前 tile 的 Query
-    float* Kj = &sram[tile_size];               // 当前 tile 的 Key
-    float* Vj = &sram[tile_size * 2];           // 当前 tile 的 Value
-    float* S  = &sram[tile_size * 3];           // 中间乘积结果 QK^T （注意：为 softmax 计算准备）
+    float* Kj = &sram[tile_size * head_size];   // 当前 tile 的 Key
+    float* Vj = &sram[tile_size * head_size * 2]; // 当前 tile 的 Value
+    float* S  = &sram[tile_size * head_size * 3]; // 中间乘积结果
 
-    // ⬅️ 遍历所有 Key/Value 的列 tile（即 attention 的 j 方向）
-    for (int j = 0; j < Tc; j++) {
-        // 📥 将当前 Kj 和 Vj 片段 load 到 shared memory
-        for (int x = 0; x < d; x++) {
-            Kj[(tx * d) + x] = K[qkv_offset + (tile_size * j) + (tx * d) + x];
-            Vj[(tx * d) + x] = V[qkv_offset + (tile_size * j) + (tx * d) + x];
+    // 📥 将当前 Query 加载到 shared memory
+    for (int x = tx; x < head_size; x += blockDim.x) {
+        Qi[x] = query_head[x];
+    }
+    __syncthreads();
+
+    // 🧮 计算 attention 分数 S = Q × K^T，只处理到 pos 位置
+    for (int t = tx; t <= pos; t += blockDim.x) {
+        float* key_head = key_cache + layer_offset + t * kv_dim + head_offset;
+        
+        // 计算当前 token 的 attention score
+        float score = 0.0f;
+        #pragma unroll
+        for (int i = 0; i < head_size; i += 4) {
+            float4 key_head_float4 = *reinterpret_cast<float4*>(key_head + i);
+            float4 query_head_float4 = *reinterpret_cast<float4*>(query_head + i);
+            score += key_head_float4.x * query_head_float4.x;
+            score += key_head_float4.y * query_head_float4.y;
+            score += key_head_float4.z * query_head_float4.z;
+            score += key_head_float4.w * query_head_float4.w;
         }
-        __syncthreads();  // ⏸️ 等待所有线程加载完毕再进行下一步
+        score *= scale;
+        score_head[t] = score;
+    }
+    __syncthreads();
 
-        // ➡️ 遍历当前 Query 的行 tile（即 attention 的 i 方向）
-        for (int i = 0; i < Tr; i++)  {
-            // 📥 将当前 Qi 片段加载到 shared memory
-            for (int x = 0; x < d; x++) {
-                Qi[(tx * d) + x] = Q[qkv_offset + (tile_size * i) + (tx * d) + x];
-            }
-
-            // 📚 读取前一轮 l/m 值（用于数值稳定的 softmax）
-            float row_m_prev = m[lm_offset + (Br * i) + tx];
-            float row_l_prev = l[lm_offset + (Br * i) + tx];
-
-            // 🧮 计算 attention 分数 S = Q × K^T，找出每行最大值 row_m（为 softmax 做数值稳定）
-            float row_m = -INFINITY;
-            for (int y = 0; y < Bc; y++) {
-                float sum = 0;
-                for (int x = 0; x < d; x++) {
-                    sum += Qi[(tx * d) + x] * Kj[(y * d) + x];
-                }
-                sum *= softmax_scale;
-                S[(Bc * tx) + y] = sum;
-                if (sum > row_m)
-                    row_m = sum;
-            }
-
-            // 🔢 softmax 操作：P = exp(S - row_max)，同时计算每行和 row_l
-            float row_l = 0;
-            for (int y = 0; y < Bc; y++) {
-                S[(Bc * tx) + y] = __expf(S[(Bc * tx) + y] - row_m);
-                row_l += S[(Bc * tx) + y];
-            }
-
-            // 🔁 更新 row_l 和 row_m（用于累积式 softmax）
-            float row_m_new = fmaxf(row_m_prev, row_m);
-            float row_l_new = (__expf(row_m_prev - row_m_new) * row_l_prev) +
-                              (__expf(row_m - row_m_new) * row_l);
-
-            // 🎯 写回输出 O：更新 O = 累加 softmax(P) * Vj，带上归一化项
-            for (int x = 0; x < d; x++) {
-                float pv = 0;
-                for (int y = 0; y < Bc; y++) {
-                    pv += S[(Bc * tx) + y] * Vj[(y * d) + x];
-                }
-
-                // 🎛️ 注意下面这一行是做数值稳定的累积 weighted sum：
-                O[qkv_offset + (tile_size * i) + (tx * d) + x] =
-                    (1 / row_l_new) * (
-                        row_l_prev * __expf(row_m_prev - row_m_new) *
-                        O[qkv_offset + (tile_size * i) + (tx * d) + x]
-                        + __expf(row_m - row_m_new) * pv
-                    );
-            }
-
-            // 🧾 更新 l 和 m 缓存，用于后续 tile 合并
-            m[lm_offset + (Br * i) + tx] = row_m_new;
-            l[lm_offset + (Br * i) + tx] = row_l_new;
+    // 🔢 使用与 MHA 相同的 softmax 实现
+    // find max value (for numerical stability)
+    float max_val = tx < (pos + 1) ? score_head[tx] : -FLT_MAX;
+    for (int i = tx + blockDim.x; i <= pos; i += blockDim.x) {
+        if (score_head[i] > max_val) {
+            max_val = score_head[i];
         }
+    }
+    using BlockReduce = cub::BlockReduce<float, 256>;
+    __shared__ BlockReduce::TempStorage temp;
+    __shared__ float shared_val;
+    max_val = BlockReduce(temp).Reduce(max_val, cub::Max());
+    if (threadIdx.x == 0) {
+        shared_val = max_val;
+    }
+    __syncthreads();
+    max_val = shared_val;
 
-        __syncthreads();  // 🧱 确保当前 tile 完整处理完，再进入下一个 tile
+    // 计算 exp 和 sum
+    float sum = 0.0f;
+    for (int i = tx; i <= pos; i += blockDim.x) {
+        score_head[i] = expf(score_head[i] - max_val);
+        sum += score_head[i];
+    }
+    sum = BlockReduce(temp).Sum(sum);
+    if (threadIdx.x == 0) {
+        shared_val = sum;
+    }
+    __syncthreads();
+    sum = shared_val;
+
+    // 归一化
+    for (int i = tx; i <= pos; i += blockDim.x) {
+        score_head[i] /= sum;
+    }
+    __syncthreads();
+
+    // 🎯 计算输出：weighted sum of values
+    float* output_head = output + head * head_size;
+    for (int i = tx; i < head_size; i += blockDim.x) {
+        float value = 0.0f;
+        #pragma unroll
+        for (int t = 0; t <= pos; t++) {
+            float* value_head = value_cache + layer_offset + t * kv_dim + head_offset;
+            float score = score_head[t];
+            value += score * value_head[i];
+        }
+        output_head[i] = value;
     }
 }
 
-// C++ 封装接口，供 mha_kernel_cu 调用
-void flash_attention_kernel_cu(const float* Q, const float* K, const float* V, int B, int nh, int N, int d,
-                                           float* l, float* m, float* O, cudaStream_t stream) {
-    // 🧩 Block 大小（tile 大小），可根据硬件动态调整
-    const int Bc = 32, Br = 32;
-    int Tc = (N + Bc - 1) / Bc;
-    int Tr = (N + Br - 1) / Br;
-    float softmax_scale = 1.0f / sqrtf((float)d);
-    size_t sram_size = (3 * Bc * d + Bc * Br) * sizeof(float);
-    dim3 grid_dim(B, nh);    // 每个 (batch, head) 启动一个 block
-    dim3 block_dim(Bc);      // 每个 block 启动 Bc 个线程（每个线程处理一个 token）
+// C++ 封装接口，与 mha_kernel_cu 保持一致的参数结构
+void flash_attention_kernel_cu(int32_t pos, int32_t head_num, int32_t layer_index, int32_t seq_len,
+                               int32_t kv_dim, int32_t kv_mul, int32_t head_size, 
+                               const tensor::Tensor& mha_out,
+                               const tensor::Tensor& query_tensor, 
+                               const tensor::Tensor& score_tensor,
+                               const tensor::Tensor& key_cache_tensor, 
+                               const tensor::Tensor& value_cache_tensor,
+                               base::DeviceType device_type, kernel::CudaConfig* config) {
+    UNUSED(device_type);
+    
+    // 🧩 计算共享内存大小
+    int tile_size = 32;
+    size_t sram_size = (3 * tile_size * head_size + tile_size * head_size) * sizeof(float);
+    
+    // 📦 获取数据指针
+    float* query = const_cast<float*>(query_tensor.ptr<float>());
+    float* score = const_cast<float*>(score_tensor.ptr<float>());
+    float* output = const_cast<float*>(mha_out.ptr<float>());
+    float* key_cache = const_cast<float*>(key_cache_tensor.ptr<float>());
+    float* value_cache = const_cast<float*>(value_cache_tensor.ptr<float>());
+    
+    // 🧮 计算层偏移
+    int32_t layer_offset = layer_index * seq_len * kv_dim;
+    
     // 🚀 启动 FlashAttention CUDA 核函数
-    flash_attention_forward_kernel<<<grid_dim, block_dim, sram_size, stream>>>(Q, K, V, N, d, Tc, Tr, Bc, Br, softmax_scale, l, m, O);
-} 
+    cudaStream_t stream = config->stream;
+    flash_attention_forward_kernel<<<head_num, 256, sram_size, stream>>>(
+        pos, seq_len, query, score, output, key_cache, value_cache, 
+        kv_dim, kv_mul, head_num, head_size, layer_offset);
+}

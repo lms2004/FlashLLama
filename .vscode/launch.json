@@ -46,6 +46,29 @@
           "ignoreFailures": true
         }
       ]
+    },
+    {
+      "name": "Debug qwen_infer_quant",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/demo/qwen_infer",
+      "args": [
+        "${workspaceFolder}/qwen2.5-0.5b-int8.bin",
+        "${workspaceFolder}/Qwen/Qwen2.5-0.5B/tokenizer.json"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
     }
   ]
 }

@@ -93,12 +93,13 @@ int main(int argc, char* argv[]) {
   const char* tokenizer_path = argv[2];
 
   model::Qwen2Model model(base::TokenizerType::kEncodeBpe, tokenizer_path,
-    checkpoint_path, false);
+    checkpoint_path, true);
   auto init_status = model.init(base::DeviceType::kDeviceCUDA);
   if (!init_status) {
     LOG(FATAL) << "The model init failed, the error code is: " << init_status.get_err_code();
   }
-  const std::string& sentence = "给我讲一个故事？";
+  const std::string& sentence = R"(给我讲一个很长的故事)";
+
 
   auto start = std::chrono::steady_clock::now();
   printf("🤖 Generating...\n");
@@ -107,7 +108,7 @@ int main(int argc, char* argv[]) {
   double first_token_latency = 0.0;
   double avg_token_latency = 0.0;
 
-  int steps = generate(model, sentence, 512, true, first_token_latency, avg_token_latency);
+  int steps = generate(model, sentence, 1024, true, first_token_latency, avg_token_latency);
 
   auto end = std::chrono::steady_clock::now();
   auto duration_sec = std::chrono::duration<double>(end - start).count();
