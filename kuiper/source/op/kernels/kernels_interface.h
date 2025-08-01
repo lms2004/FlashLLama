@@ -16,6 +16,10 @@ typedef void (*MatmulKernelQuant)(const tensor::Tensor& input, const tensor::Ten
 typedef void (*EmbeddingKernel)(const tensor::Tensor& input, const tensor::Tensor& weight,
                                 const tensor::Tensor& output, int32_t vocab_size, void* stream);
 
+typedef void (*EmbeddingKernelQuant)(const tensor::Tensor& input, const tensor::Tensor& weight,
+                                     const tensor::Tensor& output, int32_t vocab_size, 
+                                     int32_t group_size, const tensor::Tensor& scale, void* stream);
+
 typedef void (*SwigluKernel)(const tensor::Tensor& input1, const tensor::Tensor& input2,
                              const tensor::Tensor& output, void* stream);
 
@@ -48,6 +52,8 @@ void softmax_inplace_cpu(const float* input_ptr, size_t size);
 AddKernel get_add_kernel(base::DeviceType device_type);
 
 EmbeddingKernel get_emb_kernel(base::DeviceType device_type);
+
+EmbeddingKernelQuant get_emb_kernel_quant8(base::DeviceType device_type);
 
 MatmulKernel get_matmul_kernel(base::DeviceType device_type);
 

@@ -29,10 +29,30 @@ class EmbeddingLayer : public LayerParam {
 
   base::Status forward() override;
 
- private:
+ protected:
   int32_t dim_ = 0;
   int32_t seq_len_ = 0;
   int32_t vocab_size_ = 0;
 };
+
+// 量化嵌入层，继承自 EmbeddingLayer
+class QuantizedEmbeddingLayer : public EmbeddingLayer {
+ public:
+  explicit QuantizedEmbeddingLayer(base::DeviceType device_type, int32_t dim, int32_t seq_len,
+                                   int32_t vocab_size);
+
+  base::Status check() const override;
+
+  base::Status forward() override;
+
+  int32_t get_scale_num() const {
+    int32_t weight_size = vocab_size_ * dim_;
+    return weight_size / get_group_size();
+  }
+
+ private:
+  tensor::Tensor scales_;     // 缩放因子
+};
+
 }  // namespace op
 #endif  // KUIPER_INCLUDE_OP_EMBEDDING_H_

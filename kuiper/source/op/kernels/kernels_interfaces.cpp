@@ -17,6 +17,23 @@
 #include "cuda/rope_kernel.cuh"
 #include "cuda/swiglu_kernel.cuh"
 #include "kernels_interface.h"
+
+// 量化嵌入内核函数声明（暂时使用普通嵌入内核）
+extern "C" {
+void emb_kernel_quant8_cpu(const tensor::Tensor& input, const tensor::Tensor& weight,
+                           const tensor::Tensor& output, int32_t vocab_size, 
+                           int32_t group_size, const tensor::Tensor& scale, void* stream) {
+  // 暂时使用普通嵌入内核
+  kernel::emb_kernel_normal(input, weight, output, vocab_size, stream);
+}
+
+void emb_kernel_quant8_cu(const tensor::Tensor& input, const tensor::Tensor& weight,
+                          const tensor::Tensor& output, int32_t vocab_size, 
+                          int32_t group_size, const tensor::Tensor& scale, void* stream) {
+  // 暂时使用普通嵌入内核
+  kernel::emb_kernel_cu(input, weight, output, vocab_size, stream);
+}
+}
 namespace kernel {
 AddKernel get_add_kernel(base::DeviceType device_type) {
   if (device_type == base::DeviceType::kDeviceCPU) {
@@ -36,6 +53,17 @@ EmbeddingKernel get_emb_kernel(base::DeviceType device_type) {
     return emb_kernel_cu;
   } else {
     LOG(FATAL) << "Unknown device type for get an embedding kernel.";
+    return nullptr;
+  }
+}
+
+EmbeddingKernelQuant get_emb_kernel_quant8(base::DeviceType device_type) {
+  if (device_type == base::DeviceType::kDeviceCPU) {
+    return emb_kernel_quant8_cpu;
+  } else if (device_type == base::DeviceType::kDeviceCUDA) {
+    return emb_kernel_quant8_cu;
+  } else {
+    LOG(FATAL) << "Unknown device type for get a quantized embedding kernel.";
     return nullptr;
   }
 }

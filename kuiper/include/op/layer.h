@@ -178,6 +178,8 @@ class LayerParam : public Layer {
 
   void set_group_size(int32_t group_size);
 
+  int32_t get_group_size() const { return group_size_; }
+
   int32_t get_scale_num() const;
 
  protected:

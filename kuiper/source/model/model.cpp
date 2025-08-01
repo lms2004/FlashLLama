@@ -141,7 +141,11 @@ base::Status Model::read_model_file() {
     group_size_ = group_size;
     
     // 8. 跳过剩余填充字节到 256 字节
-    fseek(file, 256, SEEK_SET);
+    int32_t current_pos = ftell(file);
+    int32_t remaining_pad = 256 - current_pos;
+    if (remaining_pad > 0) {
+      fseek(file, remaining_pad, SEEK_CUR);
+    }
     
     // 9. 生成模型信息
     auto gen_status = generate_model_infos(quant_config);
