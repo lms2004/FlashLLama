@@ -201,8 +201,7 @@ base::Status LayerParam::set_weight(int32_t idx, const std::vector<int32_t>& dim
     weight.set_device_type(device_type);
     CHECK(weight.assign(buffer));
     weights_.at(idx) = weight;
-  } else {
-    // is quant layer
+  } else { // is quant layer
     tensor::Tensor weight(base::DataType::kDataTypeInt8, dims);
     weight.set_device_type(device_type);
     CHECK(weight.assign(buffer));
@@ -212,26 +211,11 @@ base::Status LayerParam::set_weight(int32_t idx, const std::vector<int32_t>& dim
     CHECK(weight_size % group_size_ == 0);
 
     int32_t scale_nums = weight_size / group_size_;
-    // 修复：使用字节偏移计算 scales 指针
-    // weight_size 是 int8_t 的数量，需要转换为字节偏移
     size_t weight_bytes = weight_size * sizeof(int8_t);
-    
-    printf("Setting scales: weight_size=%d, group_size_=%d, scale_nums=%d, weight_bytes=%zu\n", 
-           weight_size, group_size_, scale_nums, weight_bytes);
-    printf("weight_ptr=%p, scales_ptr=%p\n", weight_ptr, 
-           reinterpret_cast<float*>(static_cast<char*>(const_cast<void*>(weight_ptr)) + weight_bytes));
     
     scales_ = tensor::Tensor{base::DataType::kDataTypeFp32, scale_nums, false, nullptr,
                              reinterpret_cast<float*>(static_cast<char*>(const_cast<void*>(weight_ptr)) + weight_bytes)};
     scales_.set_device_type(device_type);
-    
-    // 检查 scales_ptr 指向的内存内容
-    float* scales_ptr = reinterpret_cast<float*>(static_cast<char*>(const_cast<void*>(weight_ptr)) + weight_bytes);
-    printf("First 8 float values at scales_ptr: ");
-    for (int i = 0; i < 8; ++i) {
-      printf("%f ", scales_ptr[i]);
-    }
-    printf("\n");
   }
 
   return base::error::Success();

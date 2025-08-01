@@ -119,7 +119,7 @@ void mha_kernel_cu(int32_t pos, int32_t head_num, int32_t layer_index, int32_t s
                    base::DeviceType device_type, CudaConfig* config) {
   UNUSED(device_type);
   // ====== FlashAttention 分支 ======
-  bool use_flash_attention = true; // 启用 FlashAttention
+  bool use_flash_attention = false; // 启用 FlashAttention
   if (use_flash_attention) {
     // 🚀 直接调用 FlashAttention kernel，参数与 MHA 完全一致
     flash_attention_kernel_cu(pos, head_num, layer_index, seq_len, kv_dim, kv_mul, head_size,

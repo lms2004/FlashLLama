@@ -28,8 +28,10 @@ struct ModelConfig {
   int32_t kv_head_num = 0;
   int32_t vocab_size = 0;
   int32_t seq_len = 0;
-  
-  // 新增：量化相关配置
+};
+
+// 量化模型配置（继承基础配置）
+struct QuantizedModelConfig : public ModelConfig {
   QuantizationType quant_type = QuantizationType::kNone;
   FileFormatVersion file_version = FileFormatVersion::kLegacy;
   int32_t group_size = 64;  // 分组量化大小

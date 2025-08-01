@@ -41,85 +41,7 @@ const tensor::Tensor& Model::get_buffer(ModelBufferType buffer_idx) const {
   return buffers_.at(buffer_idx);
 }
 
-// 新增：自动检测量化类型
-QuantizationType Model::detect_quantization_type(const std::string& model_path) const {
-  // 通过文件扩展名或内容检测量化类型
-  if (model_path.find("int8") != std::string::npos || 
-      model_path.find("q8") != std::string::npos) {
-    return QuantizationType::kInt8;
-  } else if (model_path.find("int4") != std::string::npos || 
-             model_path.find("q4") != std::string::npos) {
-    return QuantizationType::kInt4;
-  } else if (model_path.find("awq") != std::string::npos) {
-    return QuantizationType::kAWQ;
-  } else if (model_path.find("gptq") != std::string::npos) {
-    return QuantizationType::kGPTQ;
-  }
-  return QuantizationType::kNone;
-}
-
-// 新增：自动检测文件格式版本
-FileFormatVersion Model::detect_file_format_version(const std::string& model_path) const {
-  // 通过文件名或内容检测版本
-  if (model_path.find("v2") != std::string::npos) {
-    return FileFormatVersion::kVersion2;
-  } else if (model_path.find("v1") != std::string::npos) {
-    return FileFormatVersion::kVersion1;
-  } else if (model_path.find("v3") != std::string::npos) {
-    return FileFormatVersion::kVersion3;
-  }
-  return FileFormatVersion::kLegacy;
-}
-
-// 新增：设置模型信息
-void Model::set_model_info(const std::string& model_path) {
-  if (!config_) return;
-  
-  // 检测模型系列
-  if (model_path.find("qwen") != std::string::npos) {
-    config_->model_family_ = "Qwen";
-  } else if (model_path.find("llama") != std::string::npos) {
-    config_->model_family_ = "Llama";
-  } else if (model_path.find("gpt") != std::string::npos) {
-    config_->model_family_ = "GPT";
-  } else {
-    config_->model_family_ = "Unknown";
-  }
-  
-  // 设置模型名称
-  size_t last_slash = model_path.find_last_of('/');
-  size_t last_dot = model_path.find_last_of('.');
-  if (last_slash != std::string::npos && last_dot != std::string::npos) {
-    config_->model_name_ = model_path.substr(last_slash + 1, last_dot - last_slash - 1);
-  } else {
-    config_->model_name_ = model_path;
-  }
-  
-  // 设置压缩比和精度损失
-  if (config_->is_quantized()) {
-    switch (config_->quant_type_) {
-      case QuantizationType::kInt8:
-        config_->compression_ratio_ = 4.0f;
-        config_->precision_loss_ = 0.01f;  // 1%
-        break;
-      case QuantizationType::kInt4:
-        config_->compression_ratio_ = 8.0f;
-        config_->precision_loss_ = 0.02f;  // 2%
-        break;
-      case QuantizationType::kAWQ:
-        config_->compression_ratio_ = 8.0f;
-        config_->precision_loss_ = 0.015f; // 1.5%
-        break;
-      case QuantizationType::kGPTQ:
-        config_->compression_ratio_ = 8.0f;
-        config_->precision_loss_ = 0.02f;  // 2%
-        break;
-      default:
-        config_->compression_ratio_ = 1.0f;
-        config_->precision_loss_ = 0.0f;
-    }
-  }
-}
+// 删除自动检测函数，恢复原始逻辑
 
 /*
   📦 自定义 .bin 权重文件读取流程
@@ -161,17 +83,6 @@ base::Status Model::read_model_file() {
   }
 
   // 📐 读取模型结构配置 ModelConfig
-  auto config = ModelConfig{};
-  
-  // 🚀 自动检测文件格式和量化类型
-  QuantizationType detected_quant_type = detect_quantization_type(model_path_);
-  FileFormatVersion detected_version = detect_file_format_version(model_path_);
-  
-  // 如果未指定量化类型，使用自动检测结果
-  if (!is_quant_model_ && detected_quant_type != QuantizationType::kNone) {
-    is_quant_model_ = true;
-    LOG(INFO) << "Auto-detected quantization type: " << (int)detected_quant_type;
-  }
   
   if (is_quant_model_) {
     // 🚀 版本 2 量化格式：256 字节文件头
@@ -212,18 +123,19 @@ base::Status Model::read_model_file() {
       return error::ModelParseError("Failed to retrieve the group size information from the model file.");
     }
     
-    // 6. 设置 ModelConfig
-    config.dim = dim;
-    config.hidden_dim = hidden_dim;
-    config.layer_num = layer_num;
-    config.head_num = head_num;
-    config.kv_head_num = kv_head_num;
-    config.vocab_size = vocab_size;
-    config.seq_len = seq_len;
-    config.quant_type = QuantizationType::kInt8;
-    config.file_version = FileFormatVersion::kVersion2;
-    config.group_size = group_size;
-    config.is_shared_classifier = shared_classifier;
+    // 6. 设置 QuantizedModelConfig
+    QuantizedModelConfig quant_config;
+    quant_config.dim = dim;
+    quant_config.hidden_dim = hidden_dim;
+    quant_config.layer_num = layer_num;
+    quant_config.head_num = head_num;
+    quant_config.kv_head_num = kv_head_num;
+    quant_config.vocab_size = vocab_size;
+    quant_config.seq_len = seq_len;
+    quant_config.quant_type = QuantizationType::kInt8;
+    quant_config.file_version = FileFormatVersion::kVersion2;
+    quant_config.group_size = group_size;
+    quant_config.is_shared_classifier = shared_classifier;
     
     // 7. 设置 Model 类的成员变量
     group_size_ = group_size;
@@ -231,20 +143,24 @@ base::Status Model::read_model_file() {
     // 8. 跳过剩余填充字节到 256 字节
     fseek(file, 256, SEEK_SET);
     
+    // 9. 生成模型信息
+    auto gen_status = generate_model_infos(quant_config);
+    if (!gen_status) {
+      return gen_status;
+    }
     
   } else {
-    // 🚀 非量化格式：直接读取 ModelConfig
+    // 🚀 非量化格式：直接读取基础 ModelConfig
+    ModelConfig config;
     if (fread(&config, sizeof(ModelConfig), 1, file) != 1) {
       return error::ModelParseError("Failed to retrieve the configuration information from the model file.");
     }
-    config.quant_type = QuantizationType::kNone;
-    config.file_version = FileFormatVersion::kLegacy;
-  }
-
-  // 
-  auto gen_status = generate_model_infos(config);
-  if (!gen_status) {
-    return gen_status;  // ❌ 配置转化失败
+    
+    // 生成模型信息
+    auto gen_status = generate_model_infos(config);
+    if (!gen_status) {
+      return gen_status;
+    }
   }
 
   // 🧮 准备权重数据存储结构体（根据是否量化选择）
@@ -273,8 +189,6 @@ base::Status Model::read_model_file() {
   LOG(INFO) << "The model is " << quant_info << " model";
 
   if (config_) {
-    // 设置模型信息
-    set_model_info(model_path_);
     LOG(INFO) << "\nThe model info: " << *config_;
   }
 
@@ -339,7 +253,36 @@ base::Status Model::generate_model_infos(const ModelConfig& config) const {
   // }
   config_->vocab_size_ = std::abs(config.vocab_size);
   
-  // 新增：设置量化相关配置
+  // 对于基础 ModelConfig，设置默认的量化配置
+  config_->quant_type_ = QuantizationType::kNone;
+  config_->file_version_ = FileFormatVersion::kLegacy;
+  config_->group_size_ = 64;
+  config_->is_shared_classifier_ = true;
+  
+  return base::error::Success();
+}
+
+base::Status Model::generate_model_infos(const QuantizedModelConfig& config) const {
+  config_->dim_ = config.dim;
+  config_->hidden_dim_ = config.hidden_dim;
+  config_->layer_num_ = config.layer_num;
+  config_->head_num_ = config.head_num;
+  config_->kv_head_num_ = config.kv_head_num;
+  config_->seq_len_ = config.seq_len;
+
+  config_->kv_dim_ = (config.dim * config.kv_head_num) / config.head_num;
+  config_->kv_mul_ = config.head_num / config.kv_head_num;
+  config_->head_size_ = config.dim / config.head_num;
+
+  if (config.vocab_size > 0) {
+    config_->is_shared_weight_ = true;
+  } else {
+    config_->is_shared_weight_ = false;
+  }
+
+  config_->vocab_size_ = std::abs(config.vocab_size);
+  
+  // 设置量化相关配置
   config_->quant_type_ = config.quant_type;
   config_->file_version_ = config.file_version;
   config_->group_size_ = config.group_size;

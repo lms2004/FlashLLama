@@ -84,16 +84,9 @@ class Model {
 
   virtual base::Status generate_model_infos(const ModelConfig& config) const;
 
-  virtual int32_t post_processing(const tensor::Tensor& pos, bool is_prompt) const = 0;
+  virtual base::Status generate_model_infos(const QuantizedModelConfig& config) const;
 
-  // 新增：自动检测量化类型
-  virtual QuantizationType detect_quantization_type(const std::string& model_path) const;
-  
-  // 新增：自动检测文件格式版本
-  virtual FileFormatVersion detect_file_format_version(const std::string& model_path) const;
-  
-  // 新增：设置模型信息
-  virtual void set_model_info(const std::string& model_path);
+  virtual int32_t post_processing(const tensor::Tensor& pos, bool is_prompt) const = 0;
 
  private:
   virtual void init_mem() = 0;

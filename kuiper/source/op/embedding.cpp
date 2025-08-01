@@ -10,7 +10,7 @@ EmbeddingLayer::EmbeddingLayer(base::DeviceType device_type, int32_t dim, int32_
       vocab_size_(vocab_size),
       LayerParam(device_type, LayerType::kLayerEmbedding, false, "Embedding") {
   reset_weight_size(1);
-  reset_input_size(2);
+  reset_input_size(3);  // 修改为3个输入：input_tokens, input_token_num, input_embeddings
   reset_output_size(1);
 }
 

@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
   const char* tokenizer_path = argv[2];
 
   model::Qwen2Model model(base::TokenizerType::kEncodeBpe, tokenizer_path,
-    checkpoint_path, true);
+    checkpoint_path, false);
   auto init_status = model.init(base::DeviceType::kDeviceCUDA);
   if (!init_status) {
     LOG(FATAL) << "The model init failed, the error code is: " << init_status.get_err_code();
