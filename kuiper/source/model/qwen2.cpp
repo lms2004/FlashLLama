@@ -205,107 +205,135 @@ void Qwen2Model::create_nonparam_layers() {
 void Qwen2Model::create_param_quant_layers() {
   CHECK(is_quant_model_);
   CHECK(qwen_layers_ != nullptr);
+  CHECK(raw_model_data_ != nullptr);
 
-  size_t pos = 0;
   int32_t dim = config_->dim_;
+  int32_t hidden_dim = config_->hidden_dim_;
+  int32_t layer_num = config_->layer_num_;
   auto cpu_device_type = base::DeviceType::kDeviceCPU;
 
-  // query
-  for (int32_t i = 0; i < config_->layer_num_; ++i) {
+  LOG(INFO) << "Creating quantized layers with dim=" << dim << ", layer_num=" << layer_num;
+
+  // 1. 首先创建 FP32 RMSNorm 层（这些在量化模型中保持 FP32）
+  // 按照 export_qwen2.py 的顺序：attention_norm + ffn_norm + final_norm
+  size_t pos = 0;  // 从权重数据开始（跳过256字节文件头）
+  
+  // attention_norm 权重
+  for (int32_t i = 0; i < layer_num; ++i) {
+    std::shared_ptr<op::RmsNormLayer> rms_norm_layer =
+        std::make_shared<op::RmsNormLayer>(device_type_, dim);
+    
+    float* rmsnorm_weight_ptr = (float*)raw_model_data_->weight(pos);
+    rms_norm_layer->set_weight(0, {dim}, rmsnorm_weight_ptr, cpu_device_type);
+    qwen_layers_->rmsnorm_layers_.push_back(rms_norm_layer);
+    pos += dim;  // 每个 RMSNorm 权重是 dim 个 float
+  }
+  
+  // ffn_norm 权重
+  for (int32_t i = 0; i < layer_num; ++i) {
+    std::shared_ptr<op::RmsNormLayer> rms_norm_layer =
+        std::make_shared<op::RmsNormLayer>(device_type_, dim);
+    
+    float* rmsnorm_weight_ptr = (float*)raw_model_data_->weight(pos);
+    rms_norm_layer->set_weight(0, {dim}, rmsnorm_weight_ptr, cpu_device_type);
+    qwen_layers_->rmsnorm_layers_.push_back(rms_norm_layer);
+    pos += dim;  // 每个 RMSNorm 权重是 dim 个 float
+  }
+  
+  // final_norm 权重
+  std::shared_ptr<op::RmsNormLayer> final_norm_layer =
+      std::make_shared<op::RmsNormLayer>(device_type_, dim);
+  float* final_norm_weight_ptr = (float*)raw_model_data_->weight(pos);
+  final_norm_layer->set_weight(0, {dim}, final_norm_weight_ptr, cpu_device_type);
+  qwen_layers_->rmsnorm_layers_.push_back(final_norm_layer);
+  pos += dim;
+
+  // 2. 现在开始处理量化权重（按类型分组）
+  // 按照 export_qwen2.py 中的顺序：tok_embeddings, wq, wk, wv, wo, w1, w2, w3
+
+  // 2.1 词嵌入层（量化）- 1 个
+  auto embedding_layer = std::make_shared<op::MatmulLayer>(device_type_, dim, std::abs(config_->vocab_size_), true);
+  embedding_layer->set_group_size(group_size_);
+  embedding_layer->set_weight(0, {std::abs(config_->vocab_size_), dim}, raw_model_data_->weight(pos), cpu_device_type);
+  qwen_layers_->embedding_layer_ = embedding_layer;
+  pos += std::abs(config_->vocab_size_) * dim + embedding_layer->get_scale_num() * sizeof(float);
+
+  // 2.2 Wq 权重（量化）- layer_num 个
+  for (int32_t i = 0; i < layer_num; ++i) {
     auto wq = std::make_shared<op::MatmulLayer>(device_type_, dim, dim, true);
     wq->set_group_size(group_size_);
-    wq->set_weight(0, {dim, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
+    wq->set_weight(0, {dim, dim}, raw_model_data_->weight(pos), cpu_device_type);
     qwen_layers_->wq_layers_.push_back(wq);
-    pos = pos + dim * dim + wq->get_scale_num() * sizeof(float);
+    pos += dim * dim + wq->get_scale_num() * sizeof(float);
   }
 
-  // key
-  for (int32_t i = 0; i < config_->layer_num_; ++i) {
+  // 2.3 Wk 权重（量化）- layer_num 个
+  for (int32_t i = 0; i < layer_num; ++i) {
     auto wk = std::make_shared<op::MatmulLayer>(device_type_, config_->kv_dim_, dim, true);
     wk->set_group_size(group_size_);
-    wk->set_weight(0, {config_->kv_dim_, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
+    wk->set_weight(0, {config_->kv_dim_, dim}, raw_model_data_->weight(pos), cpu_device_type);
     qwen_layers_->wk_layers_.push_back(wk);
-    pos = pos + config_->kv_dim_ * dim + wk->get_scale_num() * sizeof(float);
+    pos += config_->kv_dim_ * dim + wk->get_scale_num() * sizeof(float);
   }
 
-  // value
-  for (int32_t i = 0; i < config_->layer_num_; ++i) {
+  // 2.4 Wv 权重（量化）- layer_num 个
+  for (int32_t i = 0; i < layer_num; ++i) {
     auto wv = std::make_shared<op::MatmulLayer>(device_type_, config_->kv_dim_, dim, true);
     wv->set_group_size(group_size_);
-    wv->set_weight(0, {config_->kv_dim_, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
+    wv->set_weight(0, {config_->kv_dim_, dim}, raw_model_data_->weight(pos), cpu_device_type);
     qwen_layers_->wv_layers_.push_back(wv);
     pos += config_->kv_dim_ * dim + wv->get_scale_num() * sizeof(float);
   }
 
-  // output
-  for (int32_t i = 0; i < config_->layer_num_; ++i) {
+  // 2.5 Wo 权重（量化）- layer_num 个
+  for (int32_t i = 0; i < layer_num; ++i) {
     auto wo = std::make_shared<op::MatmulLayer>(device_type_, dim, dim, true);
     wo->set_group_size(group_size_);
-    wo->set_weight(0, {dim, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
+    wo->set_weight(0, {dim, dim}, raw_model_data_->weight(pos), cpu_device_type);
     qwen_layers_->wo_layers_.push_back(wo);
-    pos = pos + dim * dim + wo->get_scale_num() * sizeof(float);
+    pos += dim * dim + wo->get_scale_num() * sizeof(float);
   }
 
-  // w1 layers
-  int32_t hidden_dim = config_->hidden_dim_;
-  for (int32_t i = 0; i < config_->layer_num_; ++i) {
+  // 2.6 W1 权重（量化）- layer_num 个
+  for (int32_t i = 0; i < layer_num; ++i) {
     auto w1 = std::make_shared<op::MatmulLayer>(device_type_, hidden_dim, dim, true);
     w1->set_group_size(group_size_);
-    w1->set_weight(0, {hidden_dim, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
+    w1->set_weight(0, {hidden_dim, dim}, raw_model_data_->weight(pos), cpu_device_type);
     qwen_layers_->w1_layers_.push_back(w1);
-    pos = pos + dim * hidden_dim + w1->get_scale_num() * sizeof(float);
+    pos += hidden_dim * dim + w1->get_scale_num() * sizeof(float);
   }
 
-  // w2 layers
-  for (int32_t i = 0; i < config_->layer_num_; ++i) {
+  // 2.7 W2 权重（量化）- layer_num 个
+  for (int32_t i = 0; i < layer_num; ++i) {
     auto w2 = std::make_shared<op::MatmulLayer>(device_type_, dim, hidden_dim, true);
     w2->set_group_size(group_size_);
-    w2->set_weight(0, {dim, hidden_dim}, this->raw_model_data_->weight(pos), cpu_device_type);
+    w2->set_weight(0, {dim, hidden_dim}, raw_model_data_->weight(pos), cpu_device_type);
     qwen_layers_->w2_layers_.push_back(w2);
-    pos = pos + dim * hidden_dim + w2->get_scale_num() * sizeof(float);
+    pos += dim * hidden_dim + w2->get_scale_num() * sizeof(float);
   }
 
-  // w3 layers
-  for (int32_t i = 0; i < config_->layer_num_; ++i) {
+  // 2.8 W3 权重（量化）- layer_num 个
+  for (int32_t i = 0; i < layer_num; ++i) {
     auto w3 = std::make_shared<op::MatmulLayer>(device_type_, hidden_dim, dim, true);
     w3->set_group_size(group_size_);
-    w3->set_weight(0, {hidden_dim, dim}, this->raw_model_data_->weight(pos), cpu_device_type);
+    w3->set_weight(0, {hidden_dim, dim}, raw_model_data_->weight(pos), cpu_device_type);
     qwen_layers_->w3_layers_.push_back(w3);
-    pos = pos + dim * hidden_dim + w3->get_scale_num() * sizeof(float);
+    pos += hidden_dim * dim + w3->get_scale_num() * sizeof(float);
   }
 
-  // wcls layer
-  auto cls_layer = std::make_shared<op::MatmulLayer>(device_type_, config_->vocab_size_, dim, true);
-  cls_layer->set_group_size(group_size_);
+  // 2.9 分类层（共享权重或独立权重）
   if (config_->is_shared_weight_) {
-    // using token embedding weight
-    cls_layer->set_weight(0, {config_->vocab_size_, dim}, this->raw_model_data_->weight(pos),
-                          cpu_device_type);
+    // 使用词嵌入权重
+    qwen_layers_->cls_layer_ = embedding_layer;
   } else {
-    // no shared
-    cls_layer->set_weight(0, {config_->vocab_size_, dim}, this->raw_model_data_->weight(pos),
-                          cpu_device_type);
-    pos = pos + config_->vocab_size_ * dim + cls_layer->get_scale_num() * sizeof(float);
+    // 独立分类层权重（如果有的话）
+    auto cls_layer = std::make_shared<op::MatmulLayer>(device_type_, config_->vocab_size_, dim, true);
+    cls_layer->set_group_size(group_size_);
+    cls_layer->set_weight(0, {config_->vocab_size_, dim}, raw_model_data_->weight(pos), cpu_device_type);
+    qwen_layers_->cls_layer_ = cls_layer;
   }
-  qwen_layers_->cls_layer_ = cls_layer;
 
-  // embedding layer
-  float* weight_ptr = (float*)raw_model_data_->weight(pos);
-  qwen_layers_->embedding_layer_ = std::make_shared<op::EmbeddingLayer>(
-      device_type_, config_->dim_, config_->seq_len_, std::abs(config_->vocab_size_));
-  qwen_layers_->embedding_layer_->set_weight(0, {std::abs(config_->vocab_size_), dim}, weight_ptr,
-                                             cpu_device_type);
-  weight_ptr += config_->vocab_size_ * dim;
-
-  // rmsnorm attention attention,ffn,final
-  for (int32_t i = 0; i < 2 * config_->layer_num_ + 1; ++i) {
-    std::shared_ptr<op::RmsNormLayer> rms_norm_layer =
-        std::make_shared<op::RmsNormLayer>(device_type_, dim);
-
-    rms_norm_layer->set_weight(0, {dim}, weight_ptr, cpu_device_type);
-    qwen_layers_->rmsnorm_layers_.push_back(rms_norm_layer);
-    weight_ptr += dim;
-  }
+  LOG(INFO) << "Created " << qwen_layers_->wq_layers_.size() << " quantized layers";
 }
 
 void Qwen2Model::create_param_layers() {
