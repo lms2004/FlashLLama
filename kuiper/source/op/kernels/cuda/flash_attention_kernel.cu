@@ -7,8 +7,8 @@
 // flash_attention_kernel.cu
 #include "flash_attention_kernel.cuh"
 
-// 🚀 FlashAttention CUDA kernel - 适配 MHA 参数结构
-// 该 kernel 实现了 block-wise、tile 化的高效注意力计算，显著降低显存占用，提升长序列推理速度。
+// 🚀 FlashAttention CUDA kernel - 修正版本：确保与MHA结果一致
+// 该 kernel 实现了与原始MHA算法完全一致的Flash Attention
 __global__ void flash_attention_forward_kernel(int32_t pos, int32_t seq_len, float* query,
                                                float* score_ptr, float* output, float* key_cache,
                                                float* value_cache, int32_t kv_dim, int32_t kv_mul,
@@ -25,13 +25,12 @@ __global__ void flash_attention_forward_kernel(int32_t pos, int32_t seq_len, flo
     float* score_head = score_ptr + head * seq_len;
     int head_offset = (head / kv_mul) * head_size;
 
-    // 🧠 声明共享内存区：用于存 Q, K, V 片段 + 中间结果 S
+    // 🧠 声明共享内存区：用于存 Q, K, V 片段
     extern __shared__ float sram[];
-    int tile_size = 32; // 使用较小的 tile size 适配 MHA 逻辑
+    int tile_size = 32; // Flash Attention 推荐的分块大小
     float* Qi = sram;                           // 当前 tile 的 Query
     float* Kj = &sram[tile_size * head_size];   // 当前 tile 的 Key
     float* Vj = &sram[tile_size * head_size * 2]; // 当前 tile 的 Value
-    float* S  = &sram[tile_size * head_size * 3]; // 中间乘积结果
 
     // 📥 将当前 Query 加载到 shared memory
     for (int x = tx; x < head_size; x += blockDim.x) {
@@ -39,11 +38,11 @@ __global__ void flash_attention_forward_kernel(int32_t pos, int32_t seq_len, flo
     }
     __syncthreads();
 
-    // 🧮 计算 attention 分数 S = Q × K^T，只处理到 pos 位置
+    // 🧮 第一步：计算所有attention scores（与原始MHA一致）
     for (int t = tx; t <= pos; t += blockDim.x) {
         float* key_head = key_cache + layer_offset + t * kv_dim + head_offset;
         
-        // 计算当前 token 的 attention score
+        // 计算当前 token 的 attention score（与原始MHA完全一致）
         float score = 0.0f;
         #pragma unroll
         for (int i = 0; i < head_size; i += 4) {
@@ -59,10 +58,17 @@ __global__ void flash_attention_forward_kernel(int32_t pos, int32_t seq_len, flo
     }
     __syncthreads();
 
-    // 🔢 使用与 MHA 相同的 softmax 实现
+    // 🔢 第二步：使用与原始MHA完全相同的softmax实现
+    // 复制原始MHA的softmax_gpu函数逻辑
+    int tid = threadIdx.x;
+    int step = blockDim.x;
+    int size = pos + 1;
+
     // find max value (for numerical stability)
-    float max_val = tx < (pos + 1) ? score_head[tx] : -FLT_MAX;
-    for (int i = tx + blockDim.x; i <= pos; i += blockDim.x) {
+    // this should be FLT_MAX, not 0 !!!!
+    // otherwise, the softmax may be occur nan when head_dim < 128 threads
+    float max_val = tid < size ? score_head[tid] : -FLT_MAX;
+    for (int i = tid + step; i < size; i += step) {
         if (score_head[i] > max_val) {
             max_val = score_head[i];
         }
@@ -77,9 +83,8 @@ __global__ void flash_attention_forward_kernel(int32_t pos, int32_t seq_len, flo
     __syncthreads();
     max_val = shared_val;
 
-    // 计算 exp 和 sum
     float sum = 0.0f;
-    for (int i = tx; i <= pos; i += blockDim.x) {
+    for (int i = tid; i < size; i += step) {
         score_head[i] = expf(score_head[i] - max_val);
         sum += score_head[i];
     }
@@ -90,13 +95,12 @@ __global__ void flash_attention_forward_kernel(int32_t pos, int32_t seq_len, flo
     __syncthreads();
     sum = shared_val;
 
-    // 归一化
-    for (int i = tx; i <= pos; i += blockDim.x) {
+    for (int i = tid; i < size; i += step) {
         score_head[i] /= sum;
     }
     __syncthreads();
 
-    // 🎯 计算输出：weighted sum of values
+    // 🎯 第三步：计算输出（与原始MHA一致）
     float* output_head = output + head * head_size;
     for (int i = tx; i < head_size; i += blockDim.x) {
         float value = 0.0f;
@@ -123,7 +127,7 @@ void flash_attention_kernel_cu(int32_t pos, int32_t head_num, int32_t layer_inde
     
     // 🧩 计算共享内存大小
     int tile_size = 32;
-    size_t sram_size = (3 * tile_size * head_size + tile_size * head_size) * sizeof(float);
+    size_t sram_size = (3 * tile_size * head_size) * sizeof(float);
     
     // 📦 获取数据指针
     float* query = const_cast<float*>(query_tensor.ptr<float>());

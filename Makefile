@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/ubun22/KuiperLLama
+CMAKE_SOURCE_DIR = /home/ubun22/FlashLLama
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/ubun22/KuiperLLama
+CMAKE_BINARY_DIR = /home/ubun22/FlashLLama
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -87,9 +87,9 @@ rebuild_cache/fast: rebuild_cache
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/ubun22/KuiperLLama/CMakeFiles /home/ubun22/KuiperLLama//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/ubun22/FlashLLama/CMakeFiles /home/ubun22/FlashLLama//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/ubun22/KuiperLLama/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/ubun22/FlashLLama/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -816,6 +816,30 @@ kuiper/source/op/kernels/cuda/emb_kernel.cu.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/llama.dir/build.make CMakeFiles/llama.dir/kuiper/source/op/kernels/cuda/emb_kernel.cu.s
 .PHONY : kuiper/source/op/kernels/cuda/emb_kernel.cu.s
 
+kuiper/source/op/kernels/cuda/flash_attention_kernel.o: kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.o
+.PHONY : kuiper/source/op/kernels/cuda/flash_attention_kernel.o
+
+# target to build an object file
+kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/llama.dir/build.make CMakeFiles/llama.dir/kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.o
+.PHONY : kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.o
+
+kuiper/source/op/kernels/cuda/flash_attention_kernel.i: kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.i
+.PHONY : kuiper/source/op/kernels/cuda/flash_attention_kernel.i
+
+# target to preprocess a source file
+kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/llama.dir/build.make CMakeFiles/llama.dir/kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.i
+.PHONY : kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.i
+
+kuiper/source/op/kernels/cuda/flash_attention_kernel.s: kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.s
+.PHONY : kuiper/source/op/kernels/cuda/flash_attention_kernel.s
+
+# target to generate assembly for a file
+kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/llama.dir/build.make CMakeFiles/llama.dir/kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.s
+.PHONY : kuiper/source/op/kernels/cuda/flash_attention_kernel.cu.s
+
 kuiper/source/op/kernels/cuda/matmul_kernel.o: kuiper/source/op/kernels/cuda/matmul_kernel.cu.o
 .PHONY : kuiper/source/op/kernels/cuda/matmul_kernel.o
 
@@ -1245,6 +1269,9 @@ help:
 	@echo "... kuiper/source/op/kernels/cuda/emb_kernel.o"
 	@echo "... kuiper/source/op/kernels/cuda/emb_kernel.i"
 	@echo "... kuiper/source/op/kernels/cuda/emb_kernel.s"
+	@echo "... kuiper/source/op/kernels/cuda/flash_attention_kernel.o"
+	@echo "... kuiper/source/op/kernels/cuda/flash_attention_kernel.i"
+	@echo "... kuiper/source/op/kernels/cuda/flash_attention_kernel.s"
 	@echo "... kuiper/source/op/kernels/cuda/matmul_kernel.o"
 	@echo "... kuiper/source/op/kernels/cuda/matmul_kernel.i"
 	@echo "... kuiper/source/op/kernels/cuda/matmul_kernel.s"
